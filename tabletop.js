@@ -327,7 +327,13 @@ function sendTiles(set, clear) {
 function resyncPlayers() {
   const v = viewFor();
   sendAll({ t: 'boards', boards: v.boards });
-  for (const b of v.boards) if (state.maps[b.id]) sendAll({ t: 'map', id: b.id, map: state.maps[b.id] });
+  // Reconcile all map images, including removal of images from scenes that are no
+  // longer player-visible. Without the null messages, clients retain stale maps
+  // after a GM layer switch, even though the board list has changed.
+  const visibleIds = new Set(v.boards.map(b => b.id));
+  for (const [id, map] of Object.entries(state.maps)) {
+    sendAll({ t: 'map', id, map: visibleIds.has(id) ? map : null });
+  }
   sendAll({ t: 'tiles', set: v.tiles, clear: true });
   sendAll({ t: 'gmEditVisuals', fog: v.gmFog, lights: v.gmLights });
   sendAll({ t: 'figs', figures: v.figures });
