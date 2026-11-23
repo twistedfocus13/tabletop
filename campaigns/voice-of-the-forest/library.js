@@ -8,6 +8,8 @@
   let manifest = null;
   let selectedChapter = 1;
   let query = "";
+  let checkpointEntries = [];
+  let renderCheckpointList = () => {};
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -26,6 +28,44 @@
     const heading = el("div", "votf-heading");
     heading.append(el("strong", "", "🌳 Voice of the Forest"), el("span", "", "GM scene library · preparation only"));
     root.append(heading);
+    const checkpointBox = el("div", "votf-checkpoints");
+    checkpointBox.append(el("strong", "", "Campaign checkpoints"));
+    const controls = el("div", "votf-checkpoint-actions");
+    const checkpointName = el("input");
+    checkpointName.type = "text";
+    checkpointName.maxLength = 90;
+    checkpointName.placeholder = "Checkpoint name";
+    checkpointName.setAttribute("aria-label", "New checkpoint name");
+    const create = el("button", "", "Save checkpoint");
+    create.type = "button";
+    create.addEventListener("click", () => document.dispatchEvent(
+      new CustomEvent("votf:checkpoint-create", { detail: { name: checkpointName.value.trim() || "Campaign checkpoint" } })));
+    const exportButton = el("button", "", "Export backup");
+    exportButton.type = "button";
+    exportButton.addEventListener("click", () => document.dispatchEvent(new Event("votf:checkpoint-export")));
+    controls.append(checkpointName, create, exportButton);
+    const savedList = el("div", "votf-checkpoint-list");
+    renderCheckpointList = () => {
+      savedList.replaceChildren();
+      if (!checkpointEntries.length) savedList.append(el("small", "", "No checkpoints saved yet."));
+      for (const cp of checkpointEntries) {
+        const line = el("div", "votf-checkpoint-row");
+        line.append(el("span", "", cp.name + " · " + new Date(cp.at).toLocaleString()));
+        const restore = el("button", "", "Restore");
+        restore.type = "button";
+        restore.addEventListener("click", () => document.dispatchEvent(
+          new CustomEvent("votf:checkpoint-restore", { detail: { id:cp.id } })));
+        const del = el("button", "", "Delete");
+        del.type = "button";
+        del.addEventListener("click", () => document.dispatchEvent(
+          new CustomEvent("votf:checkpoint-delete", { detail: { id:cp.id } })));
+        line.append(restore, del);
+        savedList.append(line);
+      }
+    };
+    checkpointBox.append(controls, savedList);
+    root.append(checkpointBox);
+    document.dispatchEvent(new Event("votf:checkpoint-list"));
     const chapters = el("div", "votf-chapters");
     for (const chapter of manifest.chapters) {
       const button = el("button", selectedChapter === chapter.id ? "votf-active" : "", String(chapter.id) + ": " + chapter.title);
@@ -61,6 +101,13 @@
         btn.type = "button";
         btn.addEventListener("click", () => openExisting(scene, notice));
         card.append(name, description, btn);
+        if (scene.id) {
+          const close = el("button", "", "Save & close scene");
+          close.type = "button";
+          close.addEventListener("click", () => document.dispatchEvent(
+            new CustomEvent("votf:close-scene", { detail: { sceneId: scene.id } })));
+          card.append(close);
+        }
         if (scene.originalFilename && scene.grid) {
           const importer = el("button", "", "Import original PNG");
           importer.type = "button";
@@ -90,10 +137,14 @@
         list.append(card);
       }
       if (!matches.length) list.append(el("p", "", ids.length ? "No matching scenes." : "Scenes not yet assigned."));
-      notice.textContent = "Map images and persistent game state are not imported by this browser. Existing saved boards are never changed.";
+      notice.textContent = "GM library: imported scenes are saved in your browser. Back up before clearing site data.";
     }
     drawScenes();
   }
+  document.addEventListener("votf:checkpoints", e => {
+    checkpointEntries = Array.isArray(e.detail?.entries) ? e.detail.entries : [];
+    renderCheckpointList();
+  });
   document.addEventListener("votf:scene-status", e => {
     const notice = document.querySelector("#votfLibrary .votf-notice");
     if (notice && typeof e.detail?.message === "string") notice.textContent = e.detail.message;
