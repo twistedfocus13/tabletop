@@ -2905,7 +2905,7 @@ document.addEventListener('votf:open-scene', e => {
   if (typeof id !== 'string') return;
   const entry = Object.entries(state.boardLib || {}).find(([, b]) => b.sceneId === id)
     || Object.entries(state.boardLib || {}).find(([, b]) => b.name === e.detail?.name);
-  if (!entry) { votfSceneStatus('This scene has no imported image yet. Choose Import original PNG.'); return; }
+  if (!entry) { votfSceneStatus('This scene needs its map picture first. Press 🖼️ Add map picture on its card.'); return; }
   openPlace(entry[0]); // Does not move the party or unlock a chapter.
   votfSceneStatus('Opened saved scene for the GM. Players remain on their current layer.');
 });
@@ -2929,7 +2929,7 @@ document.addEventListener('votf:import-scene', async e => {
     votfSceneStatus('Invalid scene or image. Nothing was imported.'); return;
   }
   if (Object.values(state.boardLib || {}).some(b => b.sceneId === sceneId)) {
-    votfSceneStatus('This scene was already imported. Choose Open saved scene instead.'); return;
+    votfSceneStatus('This scene already has its map picture. Press ▶ Open instead.'); return;
   }
   // Decode before creating a board, so a bad image leaves no stray layer.
   votfProgress('map-import', 0, 4, 'Reading original map image');
