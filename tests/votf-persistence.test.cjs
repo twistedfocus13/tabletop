@@ -113,7 +113,7 @@ test('players only receive the currently live layer, not GM saved board template
   };
   vm.createContext(fakeWorld);
   vm.runInContext(funcs.replace('function viewFor() {','function viewFor() {'),fakeWorld);
-  fakeWorld.figVisible = f => !!fakeWorld.boardAt(f.x,f.z) && fakeWorld.shown(fakeWorld.boardAt(f.x,f.z));
+  fakeWorld.figVisible = f => !!fakeWorld.boardAt(f.x,f.z) && fakeWorld.boardAt(f.x,f.z).layer === state.live;
   const v=fakeWorld.viewFor();
   assert.equal(v.boards.length,1);
   assert.equal(v.boards[0].id,'party-board');
@@ -126,7 +126,8 @@ test('portable JSON backup preserves arbitrary model binary bytes', () => {
   vm.createContext(c);
   vm.runInContext(backupSerialization,c);
   const bytes=Uint8Array.from([0,255,1,2,128,64,127]);
-  const checkpoint={format:'votf-tabletop-checkpoint',assets:[['model:shiny',bytes.buffer]]};
+  c.bytesForTest = [...bytes];
+  const checkpoint=vm.runInContext("({format:'votf-tabletop-checkpoint',assets:[['model:shiny',new Uint8Array(bytesForTest).buffer]]})",c);
   const saved=JSON.stringify(checkpoint,c.votfBackupReplacer);
   const loaded=JSON.parse(saved,c.votfBackupReviver);
   assert.deepEqual([...new Uint8Array(loaded.assets[0][1])],[...bytes]);
