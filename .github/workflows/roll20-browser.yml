@@ -1,7 +1,14 @@
 name: Roll20 browser multiplayer acceptance
 on:
   push:
-    branches: [test/v113-two-browser-acceptance]
+    branches: [main, test/v113-two-browser-acceptance]
+    paths:
+      - 'tabletop.js'
+      - 'roll20-shell.js'
+      - 'index.html'
+      - 'tests/roll20-browser.spec.cjs'
+      - '.github/workflows/roll20-browser.yml'
+  workflow_dispatch:
   pull_request:
     paths:
       - 'tabletop.js'
