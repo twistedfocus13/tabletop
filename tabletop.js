@@ -396,7 +396,12 @@ function onHostData(conn, msg) {
       f.st = st;
     }
     conn.send({ t: 'welcome', state: viewFor(cid) });
-    for (const [id, map] of Object.entries(state.maps)) if (!offView(state.boards.find(b => b.id === id))) conn.send({ t: 'map', id, map });
+    // Only transfer map images belonging to boards explicitly visible to
+    // this player. A deleted/unknown board must never count as visible.
+    const visibleBoardIds = new Set(state.boards.filter(shown).map(b => b.id));
+    for (const [id, map] of Object.entries(state.maps)) {
+      if (visibleBoardIds.has(id)) conn.send({ t: 'map', id, map });
+    }
     for (const [id, data] of modelData) conn.send({ t: 'model', id, name: state.models[id]?.name, data });
     sendAll({ t: 'figs', figures: viewFor().figures });
     addLog({ kind: 'sys', text: `${name} joined.` });
