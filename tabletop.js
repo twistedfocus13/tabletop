@@ -956,7 +956,7 @@ function handle(msg, from) {
       if (!gm) return;
       const set = {};
       for (const k of (Array.isArray(msg.keys) ? msg.keys : []).slice(0,121)) {
-        if (!/^-?\\d+,-?\\d+$/.test(k)) continue;
+        if (!/^-?\d+,-?\d+$/.test(k)) continue;
         const [i,j] = k.split(',').map(Number);
         const b = boardAt(i + 0.5,j + 0.5);
         if (!b || layerOf(b) !== gmLayer) continue;
