@@ -145,7 +145,7 @@ function freshState() {
     combat: null, rules: { diag: 'one', limit: true, autoReveal: true }, explored: 0,
     pending: [], event: null, threat: 0, paused: false,                       // GM-only: events waiting / shown
     attack: null, warp: null, warpUsed: {}, library: {}, boardLib: {},       // attack in progress, warp-out vote, GM's saved minis and boards
-    areas: {},                                                               // area shapes on the table (burst / cone / line)
+    areas: {}, gmFog: {}, gmLights: [],                                      // independent GM-drawn fog and placed lights
     dungeon: null, bag: {}, fog: null, live: 1, prep: {}, bg: '' };   // live = the layer the team is on; prep = random floors waiting on other layers          // fog = the random floor's squares players haven't seen yet (host only)                                               // bag = the team's items: name -> how many                                                         // the random dungeon: name, floor number, settings, its board
 }
 
@@ -256,12 +256,23 @@ function connectToHost() {
 }
 
 // host: what a player is allowed to see (hidden minis are GM-only)
+function playerGmFog() {
+  const out = {};
+  for (const k of Object.keys(state.gmFog || {})) {
+    const [i,j] = k.split(',').map(Number);
+    if (shown(boardAt(i + .5,j + .5))) out[k] = true;
+  }
+  return out;
+}
+function playerGmLights() {
+  return (state.gmLights || []).filter(x => shown(boardAt(x.x,x.z))).map(x => ({ ...x }));
+}
 function viewFor() {
   const figures = {}, tiles = {};
   for (const f of Object.values(state.figures)) if (figVisible(f)) figures[f.id] = f;
   for (const [k, t] of Object.entries(state.tiles)) { const v = playerTile(k, t); if (v) tiles[k] = v; }
   return { boards: state.boards.filter(shown), figures, players: state.players, log: state.log.filter(l => !l.to), gm: state.gm,
-    models: state.models, tiles, combat: combatView(), rules: state.rules, explored: state.explored, party: state.party, pending: [], event: null, threat: 0, paused: state.paused,
+    models: state.models, tiles, gmFog: playerGmFog(), gmLights: playerGmLights(), combat: combatView(), rules: state.rules, explored: state.explored, party: state.party, pending: [], event: null, threat: 0, paused: state.paused,
     attack: state.attack, warp: state.warp, ending: state.ending || null, warpUsed: {}, library: {}, boardLib: {}, areas: areasView(), dungeon: state.dungeon, bg: state.bg || '', bag: state.bag, siteBag: state.siteBag || [] };
 }
 // layers: each board sits on one (far apart on the table); players only ever see the team's layer, the GM looks at one at a time
@@ -272,7 +283,7 @@ const shown = b => !!b && !b.hidden && layerOf(b) === (state.live || 1);
 const offView = b => !!b && !shown(b);
 const gmSees = b => !b || layerOf(b) === gmLayer;
 // a random floor's rooms and corridors stay dark to players until an ally gets there (fog.hid: square -> room number, -1 = corridor or wall)
-const fogged = k => state.fog?.hid[k] != null;
+const fogged = k => state.fog?.hid[k] != null || !!state.gmFog?.[k];
 const figVisible = f => !f.hidden && !offView(boardAt(f.x, f.z)) && (!!f.owner || f.side === 'player' || !fogged(Math.floor(f.x) + ',' + Math.floor(f.z)));   // the team's own minis never vanish into the dark
 const tileVisible = k => { const [i, j] = k.split(',').map(Number); return state.tiles[k] !== 'hiddenTrap' && !offView(boardAt(i + 0.5, j + 0.5)) && !fogged(k); };
 // what players get for a square: a hidden trap on a random floor looks like the floor round it, an unseen square is darkness
@@ -313,6 +324,7 @@ function resyncPlayers() {
   sendAll({ t: 'boards', boards: v.boards });
   for (const b of v.boards) if (state.maps[b.id]) sendAll({ t: 'map', id: b.id, map: state.maps[b.id] });
   sendAll({ t: 'tiles', set: v.tiles, clear: true });
+  sendAll({ t: 'gmEditVisuals', fog: v.gmFog, lights: v.gmLights });
   sendAll({ t: 'figs', figures: v.figures });
   sendAll({ t: 'combat', combat: v.combat });
   if (isHost && checkLurkers()) pushCombat();
@@ -383,6 +395,10 @@ function onClientData(msg) {
     case 'jumpFx': if (typeof msg.id === 'string') startMiniJump(msg.id); break;
     case 'del': delete state.figures[msg.id]; removeFigMesh(msg.id); renderHud(); break;
     case 'boards': state.boards = msg.boards; buildBoard(); updateBoardInputs(); break;
+    case 'gmEditVisuals':
+      state.gmFog = msg.fog || {}; state.gmLights = msg.lights || [];
+      tilesChanged(); syncFigures(); refreshGmLights();
+      break;
     case 'tiles':
       if (msg.clear) state.tiles = {};
       Object.assign(state.tiles, msg.set || {});
@@ -934,6 +950,40 @@ function handle(msg, from) {
       for (let p = to; p; p = state.figures[p]?.parent) if (p === f.id) { to = null; break; }   // no loops
       f.parent = to;
       pushFig(f); save();
+      break;
+    }
+    case 'gmFogPaint': {
+      if (!gm) return;
+      const set = {};
+      for (const k of (Array.isArray(msg.keys) ? msg.keys : []).slice(0,121)) {
+        if (!/^-?\\d+,-?\\d+$/.test(k)) continue;
+        const [i,j] = k.split(',').map(Number);
+        const b = boardAt(i + 0.5,j + 0.5);
+        if (!b || layerOf(b) !== gmLayer) continue;
+        state.gmFog ||= {};
+        if (msg.hide) state.gmFog[k] = true; else delete state.gmFog[k];
+        set[k] = true;
+      }
+      if (!Object.keys(set).length) return;
+      tilesChanged(); syncFigures(); resyncPlayers(); save();
+      break;
+    }
+    case 'gmLightEdit': {
+      if (!gm) return;
+      state.gmLights ||= [];
+      if (msg.remove) {
+        const idx = state.gmLights.findIndex(x => x.id === msg.remove);
+        if (idx < 0) return;
+        state.gmLights.splice(idx,1);
+      } else {
+        const x = +msg.x,z = +msg.z, radius = Math.max(2,Math.min(12,+msg.radius||5));
+        if (!Number.isFinite(x) || !Number.isFinite(z) || state.gmLights.length >= 24) return;
+        const b = boardAt(x,z);
+        if (!b || layerOf(b) !== gmLayer) return;
+        const color = /^#[0-9a-f]{6}$/i.test(msg.color || '') ? msg.color : '#ffcc82';
+        state.gmLights.push({id:rid(8),x,z,radius,color,layer:layerOf(b)});
+      }
+      refreshGmLights(); resyncPlayers(); save();
       break;
     }
     case 'tiles': {
