@@ -1047,6 +1047,17 @@ function handle(msg, from) {
       if (!gm || state.boards.length < 2) return;
       const b = state.boards.find(x => x.id === msg.id);
       if (!b) return;
+      if (state.boardLib?.[b.lib]?.sceneId) {
+        if (layerOf(b) === (state.live || 1) || Object.values(state.figures).some(f => f.owner && boardAt(f.x,f.z) === b)) {
+          votfSceneStatus('Cannot delete an active campaign scene or one containing a player Pokémon. Move players first.');
+          return;
+        }
+        votfCaptureScene(b);
+        // The deleted board's saved NPCs are reconstructed on a future visit.
+        for (const [id,f] of Object.entries(state.figures)) if (!f.owner && boardAt(f.x,f.z) === b) {
+          delete state.figures[id]; sendAll({ t:'del', id });
+        }
+      }
       state.boards = state.boards.filter(x => x !== b);
       delete state.maps[b.id]; blobs.set('map:' + b.id, null);
       sendAll({ t: 'map', id: b.id, map: null });
@@ -1079,6 +1090,11 @@ function handle(msg, from) {
       const map = typeof msg.map === 'string' && msg.map.startsWith('data:image/') ? msg.map : null;
       if (map) state.maps[b.id] = map; else delete state.maps[b.id];
       blobs.set('map:' + b.id, map);
+      if (state.boardLib?.[b.lib]?.sceneId) {
+        state.boardLib[b.lib].map = !!map;
+        blobs.set('boardlib:' + b.lib, map);
+        placePics.delete(b.lib);
+      }
       buildBoard();
       if (shown(b)) sendAll({ t: 'map', id: b.id, map });
       save();
@@ -2613,6 +2629,60 @@ function setPlacesOpen(on) {
   if (on) renderPlaces();
 }
 
+// ---------- Persistent Voice of the Forest scene snapshots ----------
+// The original image is stored in IndexedDB. This records changing scenery,
+// terrain, and GM-owned NPCs without duplicating player-owned party figures.
+// A scene's editable state belongs to its stable saved-board sceneId.
+function votfCaptureScene(board) {
+  const template = state.boardLib?.[board.lib];
+  if (!template?.sceneId || template.campaignId !== 'voice-of-the-forest') return;
+  const within = (x,z) => x >= board.x && x < board.x + board.cols && z >= board.z && z < board.z + board.rows;
+  const tiles = {}, figs = [];
+  for (const [key, value] of Object.entries(state.tiles)) {
+    const [x,z] = key.split(',').map(Number);
+    if (within(x + 0.5,z + 0.5) && boardAt(x + 0.5,z + 0.5) === board)
+      tiles[(x - board.x) + ',' + (z - board.z)] = value;
+  }
+  for (const f of Object.values(state.figures)) {
+    if (f.owner || !within(f.x,f.z) || boardAt(f.x,f.z) !== board) continue;
+    const { id, x, z, ...rest } = f;
+    figs.push({ ...JSON.parse(JSON.stringify(rest)), old:id, dx:x - board.x, dz:z - board.z });
+  }
+  Object.assign(template, { cols:board.cols, rows:board.rows, grid:board.grid, tiles, figs });
+}
+function votfCaptureLoadedScenes() {
+  if (!state?.boardLib) return;
+  for (const b of state.boards) if (b.lib) votfCaptureScene(b);
+}
+function votfCloseScene(board, notify = true) {
+  const template = state.boardLib?.[board.lib];
+  if (!template?.sceneId || template.campaignId !== 'voice-of-the-forest') return false;
+  if (layerOf(board) === (state.live || 1)) {
+    if (notify) votfSceneStatus('Cannot close the players\' current layer. Move them elsewhere first.');
+    return false;
+  }
+  if (state.boards.some(other => other.id !== board.id && layerOf(other) === layerOf(board))) {
+    if (notify) votfSceneStatus('This layer contains another board. Move it before closing this scene.');
+    return false;
+  }
+  if (Object.values(state.figures).some(f => f.owner && boardAt(f.x,f.z) === board)) {
+    if (notify) votfSceneStatus('A player-owned Pokémon is still on this scene. Move the team before closing.');
+    return false;
+  }
+  votfCaptureScene(board);
+  // No player-owned figures are deleted, and no other scenes are modified.
+  for (const [id,f] of Object.entries(state.figures)) {
+    if (!f.owner && boardAt(f.x,f.z) === board) {
+      delete state.figures[id];
+      sendAll({ t:'del', id });
+    }
+  }
+  // The ordinary boardDel action handles the map and tile cleanup.
+  handle({ t:'boardDel', id:board.id }, clientId);
+  if (notify) votfSceneStatus('Scene saved and unloaded. Reopen it to restore terrain and NPCs.');
+  return true;
+}
+
 // ---------- Voice of the Forest campaign scene integration (GM only) ----------
 // Reuses the normal board, maps, saved-board and Places systems. The scene
 // browser is an optional additive overlay; no player travel happens here.
@@ -2628,6 +2698,14 @@ document.addEventListener('votf:open-scene', e => {
   if (!entry) { votfSceneStatus('This scene has no imported image yet. Choose Import original PNG.'); return; }
   openPlace(entry[0]); // Does not move the party or unlock a chapter.
   votfSceneStatus('Opened saved scene for the GM. Players remain on their current layer.');
+});
+document.addEventListener('votf:close-scene', e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = e.detail?.sceneId;
+  const b = state.boards.find(b => state.boardLib?.[b.lib]?.sceneId === id);
+  if (!b) { votfSceneStatus('This scene is not currently loaded.'); return; }
+  if (state.boards.length < 2) { votfSceneStatus('The last tabletop board cannot be closed.'); return; }
+  votfCloseScene(b);
 });
 document.addEventListener('votf:import-scene', async e => {
   if (!isHost || !document.body.classList.contains('gm')) {
@@ -2991,6 +3069,7 @@ function save() {
   if (!isHost) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    votfCaptureLoadedScenes();
     const s = { ...state, players: {}, maps: {} };
     for (const [k, p] of Object.entries(state.players)) s.players[k] = { ...p, online: false };
     store.set('tabletop.host', { code: roomCode, state: s });
