@@ -2613,6 +2613,72 @@ function setPlacesOpen(on) {
   if (on) renderPlaces();
 }
 
+// ---------- Voice of the Forest campaign scene integration (GM only) ----------
+// Reuses the normal board, maps, saved-board and Places systems. The scene
+// browser is an optional additive overlay; no player travel happens here.
+function votfSceneStatus(message) {
+  document.dispatchEvent(new CustomEvent('votf:scene-status', { detail: { message } }));
+}
+document.addEventListener('votf:open-scene', e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = e.detail?.sceneId;
+  if (typeof id !== 'string') return;
+  const entry = Object.entries(state.boardLib || {}).find(([, b]) => b.sceneId === id)
+    || Object.entries(state.boardLib || {}).find(([, b]) => b.name === e.detail?.name);
+  if (!entry) { votfSceneStatus('This scene has no imported image yet. Choose Import original PNG.'); return; }
+  openPlace(entry[0]); // Does not move the party or unlock a chapter.
+  votfSceneStatus('Opened saved scene for the GM. Players remain on their current layer.');
+});
+document.addEventListener('votf:import-scene', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) {
+    votfSceneStatus('Only the GM can import campaign scenes.'); return;
+  }
+  const { sceneId, name, cols, rows, file } = e.detail || {};
+  if (typeof sceneId !== 'string' || typeof name !== 'string' ||
+      !Number.isInteger(cols) || !Number.isInteger(rows) ||
+      cols < 2 || cols > 80 || rows < 2 || rows > 80 ||
+      !(file instanceof File) || !file.type.startsWith('image/')) {
+    votfSceneStatus('Invalid scene or image. Nothing was imported.'); return;
+  }
+  if (Object.values(state.boardLib || {}).some(b => b.sceneId === sceneId)) {
+    votfSceneStatus('This scene was already imported. Choose Open saved scene instead.'); return;
+  }
+  // Decode before creating a board, so a bad image leaves no stray layer.
+  let map;
+  try { map = await readMap(file); }
+  catch { votfSceneStatus('Could not decode this image. No board was created.'); return; }
+  const expectedRatio = cols / rows, actualRatio = map.w / map.h;
+  if (Math.abs(expectedRatio - actualRatio) > 0.15) {
+    votfSceneStatus('The image shape does not match the scene grid (' + cols + '×' + rows + '). No board was created.');
+    return;
+  }
+  // Validate after async decode too: an import may have been triggered twice.
+  if (Object.values(state.boardLib || {}).some(b => b.sceneId === sceneId)) {
+    votfSceneStatus('Scene already imported. Nothing else was changed.'); return;
+  }
+  const nextLayer = Math.max(1, ...state.boards.map(layerOf)) + 1;
+  if (nextLayer > 20) {
+    votfSceneStatus('All 20 tabletop layers are occupied. No scene was imported.'); return;
+  }
+  const newId = handle({ t: 'boardAdd', cols, rows, layer: nextLayer, hidden: false }, clientId);
+  if (!newId) { votfSceneStatus('Could not create the new scene board.'); return; }
+  handle({ t: 'map', id: newId, map: map.data }, clientId);
+  viewLayer(nextLayer);
+  pickBoard(newId);
+  const before = new Set(Object.keys(state.boardLib || {}));
+  handle({ t: 'boardSave', id: newId, name, group: 'Voice of the Forest · Chapter ' + e.detail.chapterId }, clientId);
+  const newLib = Object.keys(state.boardLib || {}).find(k => !before.has(k));
+  if (!newLib) { votfSceneStatus('Board created, but could not save it to Places.'); return; }
+  state.boardLib[newLib].sceneId = sceneId;
+  state.boardLib[newLib].campaignId = 'voice-of-the-forest';
+  state.boardLib[newLib].originalFilename = e.detail.originalFilename || file.name;
+  const board = state.boards.find(b => b.id === newId);
+  if (board) board.lib = newLib;
+  save();
+  renderPlaces();
+  votfSceneStatus('Imported ' + name + ' to GM layer ' + nextLayer + '. Saved in Places. Players were not moved.');
+});
+
 // ---------- rules helpers (host) ----------
 // is this mini standing next to square "i,j" (sides or corners), not on it?
 function nextToCell(f, key) {
