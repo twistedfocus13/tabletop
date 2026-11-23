@@ -664,6 +664,68 @@
     #gmLayerPanel { width:min(220px,calc(100vw - 105px)); }
   }
 
+
+  /* Roll20-inspired sidebar: a single dock of icon tabs; reuse original chat/dice/player controls. */
+  #r20Dock { display:flex; flex-direction:column; min-height:0; width:100%; flex:1 0 auto; }
+  #r20Dock .r20-tabs { display:flex; gap:0; flex:none; background:#19171e; margin:-10px -12px 0; border-bottom:1px solid #695272; padding:4px 3px 0; }
+  #r20Dock .r20-tab { flex:1; min-width:0; min-height:43px; border:0; border-bottom:3px solid transparent; background:transparent; color:#d8d2dc; font-size:23px; font-family:system-ui,sans-serif; border-radius:7px 7px 0 0; cursor:pointer; padding:3px; }
+  #r20Dock .r20-tab:hover, #r20Dock .r20-tab:focus-visible { background:#4b3453; color:#fff; }
+  #r20Dock .r20-tab.active { background:#603b79; border-color:#bb83da; color:#fff; }
+  #r20Dock .r20-panes { display:flex; flex:1; flex-direction:column; min-height:0; }
+  #r20Dock .r20-pane { display:none; flex-direction:column; flex:1; min-height:0; padding:10px 0 8px; overflow-y:auto; }
+  #r20Dock .r20-pane.active { display:flex; }
+  #r20Dock .r20-pane[hidden] { display:none !important; }
+  #r20Dock .r20-pane > section { display:block !important; flex:none; }
+  #r20Dock .r20-pane h3 { color:#e9bdff; font-size:14px; }
+  #r20Dock .r20-pane .r20-docked-section { border-color:#56405d; }
+  #r20Dock #r20Chat { overflow:hidden; padding:0; }
+  #r20Dock #logSec { display:flex !important; flex:1 1 auto; flex-direction:column; min-height:0; min-width:0; margin:0; padding:0 !important; border:0 !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; position:static !important; width:auto !important; right:auto !important; bottom:auto !important; transform:none !important; }
+  #r20Dock #logSec > h3 { padding:10px 12px 8px; background:#2b1532; margin:0; cursor:default !important; font-size:13px; }
+  #r20Dock #logSec > h3::after { content:none !important; }
+  #r20Dock #logMin { display:none !important; }
+  #r20Dock #log { flex:1 1 auto; min-height:90px; height:auto !important; overflow-y:auto; background:#222124; border:0; border-radius:0; padding:10px 12px; font-size:13px; line-height:1.5; }
+  #r20Dock #log > div { padding:6px 4px; border-bottom:1px solid #ffffff15; overflow-wrap:anywhere; }
+  #r20Dock #log .chat { color:#f4ebef; }
+  #r20Dock #log .roll { color:#f2c4ff; }
+  #r20Dock #log .sys { color:#e3bc5e; }
+  #r20Dock #logSec > .row { flex:none; padding:8px 6px; margin:0 !important; border-top:1px solid #64526b; background:#231e29; align-items:stretch; }
+  #r20Dock #chatIn { flex:1 1 auto; min-width:0; padding:9px; background:#130e19; border:1px solid #8a5b9c; color:#fff; }
+  #r20Dock #chatSend { background:#743a94; color:#fff; padding:8px 12px; }
+  #r20Dock .r20-chat-tips { background:#321438; border-top:1px solid #774b91; color:#ead9f2; flex:none; padding:10px 12px; }
+  #r20Dock .r20-chat-tips summary { cursor:pointer; font-weight:700; font-size:14px; }
+  #r20Dock .r20-tips-body { font-size:12px; line-height:1.5; }
+  #r20Dock .r20-description { font-size:13px; color:#d2c2d7; line-height:1.45; margin:6px 0 12px; }
+  #r20Dock .r20-actions { display:flex; flex-wrap:wrap; gap:7px; margin:8px 0 14px; }
+  #r20Dock .r20-actions button, #r20Dock .r20-invite-actions button { background:#5b3569; color:#fff; border:1px solid #9d74ae; border-radius:7px; padding:8px 10px; cursor:pointer; }
+  #r20Dock .r20-invite { background:#301536; border-top:1px solid #644179; padding:12px !important; margin-top:10px; }
+  #r20Dock .r20-invite-link { display:block; width:100%; padding:8px; background:#1b1220; border:1px solid #805a93; color:#e9d3fb; font-size:12px; box-sizing:border-box; }
+  #r20Dock .r20-invite-actions { margin-top:8px; }
+  body.r20DockActive #side > section, body.r20DockActive #side > #gmTabs { display:none !important; }
+  body.r20DockSettings #side > section, body.r20DockSettings #side > #gmTabs { display:flex; }
+  body.r20DockSettings #side > section { display:block; }
+  body.r20DockSettings #side > section[data-tab]:not(.tabOn) { display:none !important; }
+  body.r20DockSettings #side > section:first-of-type { order:0 !important; }
+  body.r20DockSettings #side > #gmTabs { order:1 !important; }
+  body.r20DockSettings #side > section[data-tab] { order:2 !important; }
+  body.r20DockSettings #r20Dock { order:-9; flex:0 0 auto; }
+  body.r20DockActive #r20Dock { order:-9; }
+  body.gm:not(.previewing) #side > #r20Dock { order:-9; }
+  body.gm:not(.previewing) #side > #logSec { position:static !important; }
+  body.gm.logMin:not(.previewing) #r20Dock #logSec > :not(h3) { display:initial !important; }
+  body.r20DockActive #r20Dock #logSec > .row { display:flex !important; }
+  #r20Dock #r20Settings .r20-description { margin-bottom:0; }
+  #r20Dock #r20Players { overflow-y:auto; }
+  #r20Dock #r20Dice { overflow-y:auto; }
+  #r20Dock #r20Scenes { overflow-y:auto; }
+  @media (min-width:701px) {
+    body.gm:not(.previewing) #side { display:flex; flex-direction:column; }
+    body.gm:not(.previewing) #r20Dock #logSec { right:auto !important; left:auto !important; }
+  }
+  @media (max-width:700px) {
+    #r20Dock .r20-tabs { margin-top:-10px; }
+    #r20Dock #log { min-height:30vh; }
+  }
+
 </style>
 </head>
 <body>
@@ -1101,5 +1163,6 @@
 <script defer src="campaigns/voice-of-the-forest/library.js?v=2"></script>
 <script defer src="peeko-chat.js?v=1"></script>
 <script defer src="gm-layer-toolbar.js?v=1"></script>
+<script defer src="roll20-shell.js?v=1"></script>
 </body>
 </html>
