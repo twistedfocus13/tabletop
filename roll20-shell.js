@@ -112,6 +112,9 @@
     }
     // Move the real components; never duplicate their IDs or handlers.
     $("r20Chat").append(logSec);
+    // The old GM log was draggable. Disable dragging inside the new dock;
+    // this log now scrolls as an ordinary sidebar conversation.
+    logSec.querySelector("h3")?.addEventListener("pointerdown",e=>e.stopImmediatePropagation(),true);
     const chatTips=make("details","r20-chat-tips");
     const summary=make("summary","","Chat tips");chatTips.append(summary);
     const text=make("div","r20-tips-body");
