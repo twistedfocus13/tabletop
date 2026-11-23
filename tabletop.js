@@ -369,6 +369,7 @@ function onClientData(msg) {
       break;
     case 'fig': upsertFig(msg.fig); renderHud(); break;
     case 'figs': state.figures = msg.figures; syncFigures(); renderHud(); break;
+    case 'jumpFx': if (typeof msg.id === 'string') startMiniJump(msg.id); break;
     case 'del': delete state.figures[msg.id]; removeFigMesh(msg.id); renderHud(); break;
     case 'boards': state.boards = msg.boards; buildBoard(); updateBoardInputs(); break;
     case 'tiles':
@@ -420,6 +421,13 @@ function handle(msg, from) {
   const f = msg.id ? state.figures[msg.id] : null;
   const mayMove = f && (gm || f.owner === from);
   switch (msg.t) {
+    case 'jump': {
+      if (!mayMove || state.paused || !boardAt(f.x, f.z) || !shown(boardAt(f.x, f.z))) return;
+      if (state.combat && state.combat.order[state.combat.turn]?.id !== f.id && !gm) return;
+      startMiniJump(f.id);
+      sendAll({ t: 'jumpFx', id: f.id });
+      break;
+    }
     case 'move': {
       if (!mayMove) return;
       if (state.paused && !gm) { pushFig(f); if (msg.done) note(from, 'Paused: the GM is resolving an event.'); return; }
@@ -5076,6 +5084,13 @@ const _shareT = new THREE.Vector3();
 // keep the graphics card free for everything else (Adam: a video on his other monitor stalled with the GM and test windows open):
 // at most 60 frames a second, 30 in a window without focus while dice or moves play, 12 while it just sits there
 let lastFrame = 0;
+// Cosmetic jump only: no teleport, airborne immunity, obstacle bypass, or extra movement.
+const miniJumpStarted = new Map();
+function startMiniJump(id) {
+  if (typeof id !== 'string' || miniJumpStarted.has(id)) return;
+  miniJumpStarted.set(id, performance.now());
+  camBusy = performance.now();
+}
 let camBusy = 0, frameDt = 0.016;
 function tick(now) {
   const busy = now - camBusy < 500 || !!dragging;   // the camera turning or a mini being dragged: every refresh, so it glides
@@ -5132,8 +5147,16 @@ function tick(now) {
   for (const g of figMeshes.values()) {
     const t = g.userData.target, off = dragging?.id === g.userData.id ? 0 : share.get(g.userData.id) || 0;
     _shareT.set(t.x + off, t.y, t.z + off);       // side by side across the square's diagonal
+    // Remove last frame's visual lift before interpolating the true position.
+    g.position.y -= g.userData.jumpLift || 0;
     g.position.lerp(_shareT, dragging?.id === g.userData.id ? 1 : 0.25);
     const U = g.userData;
+    const jumped = miniJumpStarted.get(U.id);
+    const elapsed = jumped == null ? -1 : performance.now() - jumped;
+    const lift = elapsed >= 0 && elapsed < 520 ? Math.sin(Math.PI * elapsed / 520) * 0.75 : 0;
+    if (jumped != null && elapsed >= 520) miniJumpStarted.delete(U.id);
+    U.jumpLift = lift;
+    g.position.y += lift;
     if (U.rotWant != null && U.rotNow !== U.rotWant) {   // turning smoothly to the new facing
       const dl = ((U.rotWant - U.rotNow) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
       U.rotNow = Math.abs(dl) < 0.01 ? U.rotWant : U.rotNow + dl * 0.2;
@@ -5334,6 +5357,47 @@ function onUp(e) {
   t.set(pos.x, groundAt(pos.x, pos.z, c.w, c.d), pos.z);
   if (d.moved) act({ t: 'move', id: d.id, x: pos.x, z: pos.z, snap: snapOn(), done: true, free: !!e?.shiftKey });
 }
+
+// Keyboard movement uses the normal authoritative movement action.
+// One key press = one grid square; holding repeats at a safe rate.
+// Space triggers a synchronized cosmetic jump, not a tactical jump ability.
+let keyboardStepAt = 0;
+function keyboardMini() {
+  const chosen = selectedId && state.figures[selectedId];
+  if (chosen && canMove(chosen)) return chosen;
+  if (!isHost) {
+    const mine = myMini();
+    if (mine) { select(mine.id); return mine; }
+  }
+  return null;
+}
+addEventListener('keydown', e => {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || preview ||
+      e.target?.isContentEditable || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target?.tagName) ||
+      $('game').style.display !== 'block' || painting || moveBoards || dragging || attackFor || attachFor || itemFor) return;
+  const key = e.key.toLowerCase();
+  const directions = {
+    arrowup:[0,-1], w:[0,-1], arrowdown:[0,1], s:[0,1],
+    arrowleft:[-1,0], a:[-1,0], arrowright:[1,0], d:[1,0]
+  };
+  const move = directions[key];
+  if (!move && e.code !== 'Space') return;
+  const f = keyboardMini();
+  if (!f) return;
+  e.preventDefault(); // Prevent page scrolling for arrows and Space.
+  if (e.code === 'Space') {
+    if (!e.repeat) act({ t:'jump', id:f.id });
+    return;
+  }
+  const now = performance.now();
+  if (now - keyboardStepAt < 120) return;
+  keyboardStepAt = now;
+  const [dx,dz] = move;
+  const {w,d} = fp(f);
+  // Preserve square-centering for different mini sizes.
+  const x = gridSnap(f.x + dx, w), z = gridSnap(f.z + dz, d);
+  act({ t:'move', id:f.id, x, z, snap:true, done:true });
+}, { capture:true });
 
 // =====================================================================
 // Side panel
@@ -6192,10 +6256,10 @@ function wirePanel() {
     status(n ? `Click a square to move ${f.name}: ${n} square${n === 1 ? '' : 's'} left this turn.` : `${f.name} has no movement left this turn.`);
     setTimeout(() => status(''), 4000);
   };
-  addEventListener('keydown', e => {            // the bar's buttons from the keyboard: A attack, D dash, Q actions, B bag, E end turn
+  addEventListener('keydown', e => {            // Q actions, B bag, E end turn; WASD now belongs to movement
     if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
     if ($('actBar').style.display === 'none') return;
-    const b = $({ m: 'actMove', a: 'actAttack', d: 'actDash', q: 'actMore', b: 'actBag', e: 'actEnd' }[e.key.toLowerCase()]);
+    const b = $({ m: 'actMove', q: 'actMore', b: 'actBag', e: 'actEnd' }[e.key.toLowerCase()]);
     if (b && !b.disabled) { e.preventDefault(); b.click(); }
   });
   $('actBag').onclick = () => { const b = $('bagPanel'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; $('actPanel').style.display = 'none'; renderBag(); };
