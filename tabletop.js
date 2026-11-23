@@ -3556,14 +3556,14 @@ function refreshGmFog() {
   if (cells.length) {
     const material = new THREE.MeshBasicMaterial({
       color:gm ? 0x544a70 : 0x0b0c17, transparent:gm,
-      opacity:gm ? .52 : 1, depthTest:gm, depthWrite:!gm,
+      opacity:gm ? .52 : 1, depthTest:gm, depthWrite:false,
       side:THREE.DoubleSide
     });
     const fog = new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),material,cells.length);
     const matrix = new THREE.Matrix4(), rotate = new THREE.Quaternion()
       .setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2), scale = new THREE.Vector3(1,1,1);
     cells.forEach(([i,j],idx) => fog.setMatrixAt(idx,
-      matrix.compose(new THREE.Vector3(i+.5,gm ? .25 : 8,j+.5),rotate,scale)));
+      matrix.compose(new THREE.Vector3(i+.5,gm ? .25 : .16,j+.5),rotate,scale)));
     fog.instanceMatrix.needsUpdate = true;
     fog.renderOrder = gm ? 8 : 999;
     fog.frustumCulled = false;
@@ -5469,7 +5469,7 @@ const canMove = f => f && (gmView() || (!isHost && f.owner === clientId));
 
 let painting = false, paintMode = false, paintType = 'stone', attachFor = null;
 let gmEditMode = 'tokens', gmBrush = 'hide', gmBrushSize = 1, gmLightRadius = 5, gmLightColor = '#ffcc82';
-let gmPainting = false, lastGmPaint = '';
+let gmPainting = false, lastGmPaint = '', lastGmPaintAt = 0;
 document.addEventListener('gmtools:mode', e => {
   if (!isHost || !gmView()) return;
   gmEditMode = e.detail?.mode || 'tokens';
@@ -5493,8 +5493,10 @@ function gmPaintAt(e) {
     for (let b = j - gmBrushSize + 1; b <= j + gmBrushSize - 1; b++)
       if (Math.abs(a-i)+Math.abs(b-j) < gmBrushSize) keys.push(a + ',' + b);
   const stamp = keys.join('|') + ':' + gmBrush;
-  if (stamp === lastGmPaint) return;
+  const now = performance.now();
+  if (stamp === lastGmPaint || (now - lastGmPaintAt < 55 && gmPainting)) return;
   lastGmPaint = stamp;
+  lastGmPaintAt = now;
   act({ t:'gmFogPaint', keys, hide:gmBrush !== 'reveal' });
 }
 function gmLightAt(e) {
