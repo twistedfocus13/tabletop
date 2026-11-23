@@ -636,6 +636,34 @@
   .peeko-connect { flex:1; padding:16px; font-size:13px; }
   .peeko-small { font-size:11px; color:var(--dim); padding:0 10px 6px; }
 
+
+  /* GM editing-layer palette: compact, icon-first, anchored beside the tabletop. */
+  #gmLayerToolbar { display:none; position:absolute; left:10px; top:72px; z-index:7; color:#f3ead8; font-family:var(--pix,system-ui); }
+  body.gm:not(.previewing) #gmLayerToolbar { display:flex; align-items:flex-start; gap:8px; }
+  #gmLayerButtons { display:flex; flex-direction:column; gap:4px; padding:7px 5px; background:#191918eF; border:1px solid #574937; border-radius:14px; box-shadow:0 6px 22px #0009; }
+  .gm-layer-button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:53px; min-height:54px; border:1px solid transparent; border-radius:10px; background:#343331; color:#d9d4cd; cursor:pointer; padding:4px 3px; }
+  .gm-layer-button:hover, .gm-layer-button:focus-visible { border-color:#f1ab54; color:#fff; }
+  .gm-layer-button.active { background:#155a41; color:#fff; border-color:#54c99a; box-shadow:inset 0 0 0 1px #ffffff13; }
+  .gm-layer-symbol { font-size:24px; line-height:1; min-height:28px; display:flex; align-items:center; font-family:"Segoe UI Symbol","Noto Sans Symbols 2",sans-serif; }
+  .gm-layer-name { font-size:10px; line-height:1.1; text-transform:uppercase; letter-spacing:.035em; }
+  #gmLayerPanelToggle { width:20px; min-height:32px; padding:2px; border-radius:6px; font-size:13px; background:#2b2826; color:#f3dcc2; border:1px solid #66503a; }
+  #gmLayerPanel { display:none; width:235px; max-height:min(65vh,500px); overflow-y:auto; background:#24211deF; color:#f3ead8; border:1px solid #715639; border-radius:12px; padding:11px; box-shadow:0 8px 30px #0009; }
+  #gmLayerToolbar.panel-open #gmLayerPanel { display:block; }
+  .gm-layer-panel-head { font-weight:800; color:#ffc15e; font-size:15px; margin-bottom:5px; }
+  .gm-layer-panel-help { font-family:system-ui,sans-serif; font-size:12px; line-height:1.4; margin:0 0 10px; color:#ded6c9; }
+  .gm-layer-actions { display:grid; gap:6px; }
+  .gm-layer-action { color:#f1e5d4; background:#4b382a; border:1px solid #826345; border-radius:7px; padding:8px; font-size:12px; text-align:left; cursor:pointer; }
+  .gm-layer-action:hover { background:#69472b; }
+  .gm-layer-select { width:100%; margin:5px 0 9px; border-radius:7px; padding:7px; color:#f5e9d8; background:#3a3028; border:1px solid #896c49; }
+  .gm-layer-field { font-size:12px; color:#f4c680; font-weight:600; }
+  @media (max-width:700px) {
+    #gmLayerToolbar { left:6px; top:70px; }
+    .gm-layer-button { width:46px; min-height:46px; }
+    .gm-layer-symbol { font-size:19px; min-height:22px; }
+    .gm-layer-name { font-size:9px; }
+    #gmLayerPanel { width:min(220px,calc(100vw - 105px)); }
+  }
+
 </style>
 </head>
 <body>
@@ -665,6 +693,12 @@
 
 <div id="game">
   <div id="view"></div>
+  <div id="gmLayerToolbar" aria-label="GM editing layers" role="group">
+    <div id="gmLayerButtons" role="group" aria-label="Choose editing layer"></div>
+    <button id="gmLayerPanelToggle" type="button" title="Show editing options" aria-label="Toggle editing options" aria-controls="gmLayerPanel" aria-expanded="false">▸</button>
+    <div id="gmLayerPanel" aria-label="Editing layer options"></div>
+  </div>
+
   <div id="status"></div>
 <div id="hud"><img id="hudPic" alt=""><div class="hb"><div class="hn"><span id="hudName"></span><small id="hudHp"></small></div><div class="hpb"><i id="hudBar"></i></div><div class="ht" id="hudTurn"></div><div id="hudAct"></div><div id="hudSt"></div></div></div>
 <div id="teamTiles"></div>
@@ -1066,5 +1100,6 @@
 <script type="module" src="tabletop.js?v=112.1"></script>
 <script defer src="campaigns/voice-of-the-forest/library.js?v=2"></script>
 <script defer src="peeko-chat.js?v=1"></script>
+<script defer src="gm-layer-toolbar.js?v=1"></script>
 </body>
 </html>
