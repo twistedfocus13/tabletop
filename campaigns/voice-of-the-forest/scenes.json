@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 1,
+  "campaignId": "voice-of-the-forest",
+  "title": "Voice of the Forest",
+  "storySource": {
+    "repository": "twistedfocus13/thevoiceoftheforest",
+    "sourceFile": "js/content.js",
+    "publishedDataEndpoint": null,
+    "syncMode": "automatic",
+    "notes": "A player-safe JSON feed must be published before automatic story sync can run. Never automatically unlock tabletop chapters."
+  },
+  "settings": {
+    "chapterOrder": "numeric",
+    "unlockPolicy": "gm-only",
+    "revisitDiscovered": true,
+    "travelPolicy": "gm-only",
+    "scenePersistence": "always",
+    "autosave": true,
+    "manualCheckpoints": true
+  },
+  "chapters": [
+    {
+      "id": 0,
+      "title": "The Voice of the Forest",
+      "publishedStatus": "complete",
+      "sceneIds": [
+        "woodland-base",
+        "gravity-falls-guild",
+        "lucky-den"
+      ]
+    },
+    {
+      "id": 1,
+      "title": "Earthquake at Woodland Base",
+      "publishedStatus": "in progress",
+      "sceneIds": [
+        "woodland-base",
+        "gravity-falls-guild",
+        "twilight-falls-1",
+        "twilight-falls-2",
+        "twilight-falls-3",
+        "fissure-small-1",
+        "fissure-small-2",
+        "fissure-small-3",
+        "fissure-small-4",
+        "fissure-medium-1",
+        "fissure-medium-2",
+        "fissure-medium-3",
+        "fissure-medium-4",
+        "fissure-large-1",
+        "fissure-boss-1",
+        "fissure-boss-2"
+      ]
+    },
+    {
+      "id": 2,
+      "title": "The Fading Blossom Meadow",
+      "publishedStatus": "planned",
+      "sceneIds": [
+        "blossom-meadow"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Poisoned Waters at Crystal Lake",
+      "publishedStatus": "planned",
+      "sceneIds": [
+        "crystal-lake"
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Chapter 4",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    },
+    {
+      "id": 5,
+      "title": "Chapter 5",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    },
+    {
+      "id": 6,
+      "title": "Chapter 6",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    },
+    {
+      "id": 7,
+      "title": "Chapter 7",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    },
+    {
+      "id": 8,
+      "title": "Chapter 8",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    },
+    {
+      "id": 9,
+      "title": "Chapter 9",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    },
+    {
+      "id": 10,
+      "title": "Chapter 10",
+      "publishedStatus": "planned",
+      "sceneIds": []
+    }
+  ],
+  "scenes": [
+    {
+      "id": "woodland-base",
+      "name": "Woodland Base",
+      "locationId": "woodland-base",
+      "kind": "hub",
+      "asset": null,
+      "grid": null
+    },
+    {
+      "id": "gravity-falls-guild",
+      "name": "Gravity Falls Guild",
+      "locationId": "gravity-falls-guild",
+      "kind": "location",
+      "asset": null,
+      "grid": null
+    },
+    {
+      "id": "lucky-den",
+      "name": "Lucky Den",
+      "locationId": "lucky-den",
+      "kind": "location",
+      "asset": null,
+      "grid": null
+    },
+    {
+      "id": "twilight-falls-1",
+      "name": "Twilight Falls — Floor 1",
+      "locationId": "twilight-falls",
+      "kind": "dungeon",
+      "originalFilename": "Twilight_Falls_Floor_1.png",
+      "asset": null,
+      "grid": {
+        "cols": 25,
+        "rows": 25
+      }
+    },
+    {
+      "id": "twilight-falls-2",
+      "name": "Twilight Falls — Floor 2",
+      "locationId": "twilight-falls",
+      "kind": "dungeon",
+      "originalFilename": "Twilight_Falls_Floor_2.png",
+      "asset": null,
+      "grid": {
+        "cols": 25,
+        "rows": 25
+      }
+    },
+    {
+      "id": "twilight-falls-3",
+      "name": "Twilight Falls — Floor 3",
+      "locationId": "twilight-falls",
+      "kind": "dungeon",
+      "originalFilename": "Twilight_Falls_Floor_3.png",
+      "asset": null,
+      "grid": {
+        "cols": 25,
+        "rows": 25
+      }
+    },
+    {
+      "id": "fissure-small-1",
+      "name": "Chapter 1 Fissure Cave 20x20",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Fissure_Cave_20x20.png",
+      "asset": null,
+      "grid": {
+        "cols": 20,
+        "rows": 20
+      }
+    },
+    {
+      "id": "fissure-small-2",
+      "name": "Chapter 1 Small Floor 2 Central Loop 20x20",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Small_Floor_2_Central_Loop_20x20.png",
+      "asset": null,
+      "grid": {
+        "cols": 20,
+        "rows": 20
+      }
+    },
+    {
+      "id": "fissure-small-3",
+      "name": "Chapter 1 Small Floor 3 Water Branch 20x20",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Small_Floor_3_Water_Branch_20x20.png",
+      "asset": null,
+      "grid": {
+        "cols": 20,
+        "rows": 20
+      }
+    },
+    {
+      "id": "fissure-small-4",
+      "name": "Chapter 1 Small Floor 4 Collapsed Zigzag 20x20",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Small_Floor_4_Collapsed_Zigzag_20x20.png",
+      "asset": null,
+      "grid": {
+        "cols": 20,
+        "rows": 20
+      }
+    },
+    {
+      "id": "fissure-medium-1",
+      "name": "Chapter 1 Fissure Cave Medium 30x30",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Fissure_Cave_Medium_30x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 30,
+        "rows": 30
+      }
+    },
+    {
+      "id": "fissure-medium-2",
+      "name": "Chapter 1 Medium Floor 2 Split Loop 30x30",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Medium_Floor_2_Split_Loop_30x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 30,
+        "rows": 30
+      }
+    },
+    {
+      "id": "fissure-medium-3",
+      "name": "Chapter 1 Medium Floor 3 Twin Water Hub 30x30",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Medium_Floor_3_Twin_Water_Hub_30x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 30,
+        "rows": 30
+      }
+    },
+    {
+      "id": "fissure-medium-4",
+      "name": "Chapter 1 Medium Floor 4 Collapsed Maze 30x30",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Medium_Floor_4_Collapsed_Maze_30x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 30,
+        "rows": 30
+      }
+    },
+    {
+      "id": "fissure-large-1",
+      "name": "Chapter 1 Fissure Cave Large 40x30",
+      "locationId": "fissure-cave",
+      "kind": "dungeon",
+      "originalFilename": "Chapter_1_Fissure_Cave_Large_40x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 40,
+        "rows": 30
+      }
+    },
+    {
+      "id": "fissure-boss-1",
+      "name": "Chapter 1 Boss Room 1 Broken Crown 30x30",
+      "locationId": "fissure-cave",
+      "kind": "boss",
+      "originalFilename": "Chapter_1_Boss_Room_1_Broken_Crown_30x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 30,
+        "rows": 30
+      }
+    },
+    {
+      "id": "fissure-boss-2",
+      "name": "Chapter 1 Boss Room 2 Flooded Edge 30x30",
+      "locationId": "fissure-cave",
+      "kind": "boss",
+      "originalFilename": "Chapter_1_Boss_Room_2_Flooded_Edge_30x30.png",
+      "asset": null,
+      "grid": {
+        "cols": 30,
+        "rows": 30
+      }
+    },
+    {
+      "id": "blossom-meadow",
+      "name": "Blossom Meadow",
+      "locationId": "blossom-meadow",
+      "kind": "location",
+      "asset": null,
+      "grid": null
+    },
+    {
+      "id": "crystal-lake",
+      "name": "Crystal Lake",
+      "locationId": "crystal-lake",
+      "kind": "location",
+      "asset": null,
+      "grid": null
+    }
+  ],
+  "unassignedLocations": [
+    "Sunshell Beach",
+    "Mooncliff Highwatch",
+    "Glasswater Camps",
+    "Relicwatch",
+    "Mistveil",
+    "Tidal Rest",
+    "Hollowlight",
+    "Ancient Ruins",
+    "Whispering Falls"
+  ]
+}
