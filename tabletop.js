@@ -2677,6 +2677,120 @@ function votfCloseScene(board, notify = true) {
   return true;
 }
 
+// ---------- Voice of the Forest: GM-only named checkpoints ----------
+// Backup includes the host's entire persistent state and IndexedDB map/model blobs.
+// Checkpoints are kept separate from the existing game save and never broadcast.
+const VOTF_CHECKPOINT_INDEX = 'tabletop.votf.checkpoints';
+const VOTF_CHECKPOINT_PREFIX = 'votf:checkpoint:';
+const votfCheckpointIndex = () => store.get(VOTF_CHECKPOINT_INDEX) || [];
+function votfCheckpointList() {
+  document.dispatchEvent(new CustomEvent('votf:checkpoints', { detail: {
+    entries: votfCheckpointIndex().map(x => ({ id:x.id, name:x.name, at:x.at }))
+  } }));
+}
+async function votfSnapshot(name, permanent = true) {
+  if (!isHost) throw Error('Only the GM can save checkpoints.');
+  votfCaptureLoadedScenes();
+  const persistent = { ...state, maps:{}, players:{} };
+  for (const [id,p] of Object.entries(state.players))
+    persistent.players[id] = { ...p, online:false };
+  const assets = (await blobs.dump()).filter(([key]) => !String(key).startsWith(VOTF_CHECKPOINT_PREFIX));
+  const id = 'cp-' + Date.now() + '-' + rid(5);
+  const record = { format:'votf-tabletop-checkpoint', version:1, id,
+    name:clean(name,90) || 'Campaign checkpoint', at:new Date().toISOString(),
+    room:roomCode, state:JSON.parse(JSON.stringify(persistent)), assets };
+  if (permanent) {
+    await blobs.set(VOTF_CHECKPOINT_PREFIX + id, record);
+    const check = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
+    if (!check || check.id !== id || check.assets?.length !== assets.length)
+      throw Error('Checkpoint could not be verified in browser storage; export a backup instead.');
+    const index = votfCheckpointIndex();
+    if (!store.set(VOTF_CHECKPOINT_INDEX, [{ id, name:record.name, at:record.at }, ...index]))
+      throw Error('Checkpoint written but its index could not be saved (browser storage full).');
+    votfCheckpointList();
+  }
+  return record;
+}
+function votfDownloadBackup(record) {
+  const blob = new Blob([JSON.stringify(record)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'voice-of-the-forest-backup-' + record.at.slice(0,10) + '.json';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+document.addEventListener('votf:checkpoint-create', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  try {
+    votfSceneStatus('Saving checkpoint and verifying it…');
+    const saved = await votfSnapshot(e.detail?.name || 'Campaign checkpoint');
+    votfSceneStatus('Checkpoint saved: ' + saved.name);
+  } catch(err) { votfSceneStatus('Checkpoint failed: ' + err.message); }
+});
+document.addEventListener('votf:checkpoint-list', () => {
+  if (isHost) votfCheckpointList();
+});
+document.addEventListener('votf:checkpoint-export', async () => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  try {
+    votfSceneStatus('Preparing downloadable backup…');
+    const record = await votfSnapshot('Exported campaign backup', false);
+    votfDownloadBackup(record);
+    votfSceneStatus('Backup download requested. Verify the downloaded JSON file before relying on it.');
+  } catch(err) { votfSceneStatus('Backup export failed: ' + err.message); }
+});
+document.addEventListener('votf:checkpoint-restore', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  if ([...conns.values()].some(x => x.conn?.open)) {
+    votfSceneStatus('Disconnect players before restoring a checkpoint.'); return;
+  }
+  const id = String(e.detail?.id || '');
+  if (!votfCheckpointIndex().some(x => x.id === id)) return;
+  const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
+  if (!data || data.format !== 'votf-tabletop-checkpoint' || data.version !== 1 ||
+      !data.state || !Array.isArray(data.state.boards) || !Array.isArray(data.assets)) {
+    votfSceneStatus('This checkpoint could not be validated. Nothing changed.'); return;
+  }
+  if (!confirm('Restore "' + data.name + '"? The current session will be replaced after saving a safety checkpoint.')) return;
+  try {
+    votfSceneStatus('Creating a safety checkpoint before recovery…');
+    const safety = await votfSnapshot('Safety before restoring ' + data.name);
+    // End any pending normal autosave so it cannot overwrite the restored state.
+    clearTimeout(saveTimer);
+    const existing = await blobs.dump();
+    const desired = new Set(data.assets.map(([k]) => k));
+    for (const [k] of existing) {
+      if (!String(k).startsWith(VOTF_CHECKPOINT_PREFIX) && !desired.has(k)) await blobs.set(k,null);
+    }
+    for (const [key,value] of data.assets) {
+      if (typeof key !== 'string' || !/^(map|boardlib|model):/.test(key))
+        throw Error('Unexpected asset key in checkpoint');
+      await blobs.set(key,value);
+    }
+    if (!store.set('tabletop.host', { code:data.room || roomCode, state:data.state }))
+      throw Error('Restored game state could not be written. See safety checkpoint ' + safety.id);
+    location.reload();
+  } catch(err) {
+    votfSceneStatus('Restore interrupted: ' + err.message + '. Check your safety checkpoint before retrying.');
+  }
+});
+document.addEventListener('votf:checkpoint-delete', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = String(e.detail?.id || '');
+  const list = votfCheckpointIndex();
+  const cp = list.find(x => x.id === id);
+  if (!cp || !confirm('Permanently delete checkpoint "' + cp.name + '"?')) return;
+  await blobs.set(VOTF_CHECKPOINT_PREFIX + id, null);
+  if (!store.set(VOTF_CHECKPOINT_INDEX, list.filter(x => x.id !== id))) {
+    votfSceneStatus('Could not update the checkpoint index.'); return;
+  }
+  votfCheckpointList();
+  votfSceneStatus('Checkpoint deleted.');
+});
+
 // ---------- Voice of the Forest campaign scene integration (GM only) ----------
 // Reuses the normal board, maps, saved-board and Places systems. The scene
 // browser is an optional additive overlay; no player travel happens here.
