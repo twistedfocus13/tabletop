@@ -272,13 +272,21 @@ function playerGmLights() {
 function logForViewer(cid) {
   return state.log.filter(entry => !entry.to || entry.to === cid || entry.from === cid);
 }
+// Only the public floor presentation belongs on a player's client.
+// Spawn tables, enemy species, trap counts and room layout stay GM-only.
+function dungeonView() {
+  const d = state.dungeon;
+  if (!d) return null;
+  const { board, name, floor, look, desc } = d;
+  return { board, name, floor, look, desc };
+}
 function viewFor(cid) {
   const figures = {}, tiles = {};
   for (const f of Object.values(state.figures)) if (figVisible(f)) figures[f.id] = f;
   for (const [k, t] of Object.entries(state.tiles)) { const v = playerTile(k, t); if (v) tiles[k] = v; }
   return { boards: state.boards.filter(shown), figures, players: state.players, log: cid ? logForViewer(cid) : state.log.filter(l => !l.to), gm: state.gm,
     models: state.models, tiles, gmFog: playerGmFog(), gmLights: playerGmLights(), combat: combatView(), rules: state.rules, explored: state.explored, party: state.party, pending: [], event: null, threat: 0, paused: state.paused,
-    attack: state.attack, warp: state.warp, ending: state.ending || null, warpUsed: {}, library: {}, boardLib: {}, areas: areasView(), dungeon: state.dungeon, bg: state.bg || '', bag: state.bag, siteBag: state.siteBag || [] };
+    attack: state.attack, warp: state.warp, ending: state.ending || null, warpUsed: {}, library: {}, boardLib: {}, areas: areasView(), dungeon: dungeonView(), bg: state.bg || '', bag: state.bag, siteBag: state.siteBag || [] };
 }
 // layers: each board sits on one (far apart on the table); players only ever see the team's layer, the GM looks at one at a time
 const LAYER_GAP = 200;
@@ -2666,7 +2674,7 @@ function newFloorStart(D) {
   state.party = { turn: state.party.turn + 1, from: {}, dash: {} }; pushParty();
   state.areas = {}; pushAreas();
   if (D) addLog({ kind: 'sys', text: `${D.name} B${D.floor}F` });
-  sendAll({ t: 'dungeon', dungeon: state.dungeon, fresh: !!D }); renderFloor(!!D);
+  sendAll({ t: 'dungeon', dungeon: dungeonView(), fresh: !!D }); renderFloor(!!D);
 }
 // GM (or the stairs): the team moves to layer L. Players now see only that layer; a random floor waiting there starts.
 function goLive(L) {
