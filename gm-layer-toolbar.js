@@ -166,9 +166,30 @@
     useTab(tab);
     try { sessionStorage.setItem("tabletop.gmEditMode", id); } catch {}
   }
+  // 11-22: keep the tool rail below the Places bar so it never covers the scene cards.
+  function fitBelowPlaces() {
+    const bar = byId("gmLayerToolbar"), places = byId("placesBar");
+    if (!bar) return;
+    let top = 72;
+    const holder = (bar.offsetParent || document.body).getBoundingClientRect();
+    if (places && places.offsetParent) {
+      top = Math.max(72, Math.round(places.getBoundingClientRect().bottom - holder.top + 10));
+    }
+    bar.style.top = top + "px";
+    const room = (holder.height || window.innerHeight) - top - 12;
+    bar.style.setProperty("--railMax", Math.max(160, Math.round(room)) + "px");
+  }
+  function watchPlaces() {
+    const places = byId("placesBar");
+    if (places && "ResizeObserver" in window) new ResizeObserver(fitBelowPlaces).observe(places);
+    window.addEventListener("resize", fitBelowPlaces);
+    new MutationObserver(fitBelowPlaces).observe(document.body, { attributes:true, attributeFilter:["class"] });
+    fitBelowPlaces();
+  }
   function init() {
     const bar = byId("gmLayerToolbar"), toggle = byId("gmLayerPanelToggle");
     if (!bar || !toggle) return;
+    watchPlaces();
     const items = byId("gmLayerButtons");
     for (const spec of modes) {
       const btn = make("button", "gm-layer-button", "");
