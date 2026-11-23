@@ -8,7 +8,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { dieKit, dieMaterials, simulate, readDie } from './dice.js?v=112';
 import { reachable, lineOfSight, distance, adjacent, cellsOf, BLOCKS_MOVE, STATUSES, DUNGEON_EVENTS, EVENT_INFO, directionFor, lootFor } from './rules.js?v=112';
 
-const VERSION = 112;                              // raised by bump.py on every publish
+const VERSION = 113;                              // raised by bump.py on every publish
 // The page and this code must be the same version. GitHub Pages' cache can hand out an old copy of the page together
 // with the newest code; new windows (like the turn order) are then missing from the page and never show (Adam 11-04).
 // When they don't match, load a fresh copy of the page once (the extra 'fresh' word makes every cache fetch it anew).
@@ -1332,7 +1332,18 @@ function handle(msg, from) {
     }
     case 'chat': {
       const text = clean(msg.text, 300);
-      if (text) addLog({ kind: 'chat', from, text });
+      if (!text) break;
+      // Private messages: only the recipient, the sender, and the GM
+      // receive the message. Never rely on client-side filtering for privacy.
+      if (msg.to) {
+        const destination = String(msg.to).trim().toLowerCase();
+        const target = destination === 'gm' ? state.gm :
+          Object.keys(state.players).find(id => state.players[id]?.name?.toLowerCase() === destination);
+        if (!target) { note(from, 'Player not found: ' + clean(msg.to, 50)); break; }
+        const entry = {kind:'chat',from,text,to:target};
+        addLog(entry);
+        if (from !== target && from !== state.gm) sendAll({t:'log',entry},cid=>cid===from);
+      } else addLog({ kind: 'chat', from, text });
       break;
     }
   }
@@ -5838,7 +5849,18 @@ function renderLogEntry(e) {
   else {
     const n = document.createElement('b'); n.textContent = e.name + (e.kind === 'chat' ? ': ' : ' ');
     if (e.color) n.style.color = e.color;
-    d.appendChild(n); d.appendChild(document.createTextNode(e.text + (e.to ? ' (hidden)' : '')));
+    d.appendChild(n);
+    const diceMatch = e.kind === 'roll' && /^rolled \d+d\d+:/.test(e.text) && /(\d+)$/.exec(e.text);
+    if (diceMatch) {
+      const result = diceMatch[1];
+      d.appendChild(document.createTextNode(e.text.slice(0, -result.length)));
+      const badge = document.createElement('span');
+      badge.className = 'r20-roll-result';
+      badge.textContent = result;
+      badge.setAttribute('aria-label', 'Roll result ' + result);
+      d.appendChild(badge);
+      if (e.to) d.appendChild(document.createTextNode(' (GM only)'));
+    } else d.appendChild(document.createTextNode(e.text + (e.to ? ' (hidden)' : '')));
   }
   const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
   el.appendChild(d);
@@ -6457,7 +6479,24 @@ function wirePanel() {
     };
     $('dice').appendChild(b);
   }
-  const sendChat = () => { const t = $('chatIn').value.trim(); if (t) { act({ t: 'chat', text: t }); $('chatIn').value = ''; } };
+  const sendChat = () => {
+    const raw = $('chatIn').value.trim();
+    if (!raw) return;
+    // Roll20-style commands, using the tabletop's own authoritative dice/chat.
+    const roll = /^\/(?:r|roll|gmroll|gr)\s+(\d{1,2})d(4|6|8|10|12|20|100)$/i.exec(raw);
+    if (roll) {
+      act({t:'roll',n:+roll[1],sides:+roll[2],hidden:/^\/(?:gmroll|gr)\b/i.test(raw)});
+    } else {
+      const whisper = /^\/w\s+(?:"([^"]+)"|(\S+))\s+([\s\S]+)$/i.exec(raw);
+      if (whisper) act({t:'chat',to:whisper[1]||whisper[2],text:whisper[3]});
+      else if (raw.startsWith('/')) {
+        status('Unknown chat command. Try /roll 1d20 or /w gm hello.');
+        setTimeout(()=>status(''),3500);
+        return;
+      } else act({t:'chat',text:raw});
+    }
+    $('chatIn').value='';
+  };
   $('chatSend').onclick = sendChat;
   $('chatIn').onkeydown = e => { if (e.key === 'Enter') sendChat(); };
   $('copyLink').onclick = async () => {
