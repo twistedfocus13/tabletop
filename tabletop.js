@@ -1436,7 +1436,7 @@ async function chanceRoll(f, tg, mv, from, at, dir) {
 
 // ---------- characters from the Voice of the Forest site: read only, the site is never changed from here ----------
 const SITE_DB = 'https://voiceoftheforest-e071c-default-rtdb.firebaseio.com';
-let siteParty = {}, siteBagRaw = {}, siteES = null, siteBagES = null, siteCodeOn = '', siteReqES = null, siteReq = {}, siteReqBusy = false;
+let siteParty = {}, siteBagRaw = {}, siteES = null, siteBagES = null, siteRecruitsES = null, siteCodeOn = '', siteReqES = null, siteReq = {}, siteReqBusy = false;
 // a floor asked for by the site's Dungeon panel: once per request, never one older than 10 minutes the first time
 function siteRequest(r) {
   if (!isHost || !r || !r.t || !r.dungeon || siteReqBusy) return;
@@ -1461,8 +1461,21 @@ function siteFeed() {
   const code = (state.siteCode || 'VOICE').toUpperCase();
   if (isHost) renderFzList();                    // 11-22 Friend Zone minis follow the site's table code
   if (!isHost || (siteES && siteCodeOn === code)) return;
-  siteES?.close(); siteBagES?.close(); siteParty = {}; siteBagRaw = {}; siteCodeOn = code;
+  siteES?.close(); siteBagES?.close(); siteRecruitsES?.close();
+  siteParty = {}; siteBagRaw = {}; siteCodeOn = code;
   siteES = new EventSource(`${SITE_DB}/tables/${encodeURIComponent(code)}/party.json`);
+  // Recruits can join or move camps while the tabletop is already open.
+  // A Firebase change event re-reads the current camp listing.
+  siteRecruitsES = new EventSource(`${SITE_DB}/tables/${encodeURIComponent(code)}/recruits.json`);
+  let recruitRefresh = 0;
+  const refreshRecruits = () => {
+    clearTimeout(recruitRefresh);
+    recruitRefresh = setTimeout(() => {
+      if (isHost && siteCodeOn === code) renderFzList(true);
+    }, 400);
+  };
+  siteRecruitsES.addEventListener('put', refreshRecruits);
+  siteRecruitsES.addEventListener('patch', refreshRecruits);
   // 11-22 (Twistedfocus: "I want this to send the request to the table top and make something for me"): the site's Dungeon
   // panel writes tables/<code>/ttreq = { t, dungeon, floor, floors, desc, event }; the GM's tabletop offers to build that floor
   siteReqES?.close();
@@ -5066,7 +5079,7 @@ const FZ_CAMP_CREW = [
 const FZ_NICKNAMES = { teddiursa:'Teddy' };
 function fzIdentity(record) {
   const raw = String(record?.name || '').trim();
-  const species = String(record?.species || record?.pokemon || raw).trim();
+  const species = String(record?.species || record?.pokemon || (raw.toLowerCase() === 'teddy' ? 'Teddiursa' : raw)).trim();
   const label = String(record?.nickname || FZ_NICKNAMES[raw.toLowerCase()] || raw).trim();
   return { name:label, species };
 }
