@@ -1436,7 +1436,7 @@ async function chanceRoll(f, tg, mv, from, at, dir) {
 
 // ---------- characters from the Voice of the Forest site: read only, the site is never changed from here ----------
 const SITE_DB = 'https://voiceoftheforest-e071c-default-rtdb.firebaseio.com';
-let siteParty = {}, siteBagRaw = {}, siteES = null, siteBagES = null, siteCodeOn = '', siteReqES = null, siteReq = {}, siteReqBusy = false;
+let siteParty = {}, siteBagRaw = {}, siteES = null, siteBagES = null, siteRecruitsES = null, siteCodeOn = '', siteReqES = null, siteReq = {}, siteReqBusy = false;
 // a floor asked for by the site's Dungeon panel: once per request, never one older than 10 minutes the first time
 function siteRequest(r) {
   if (!isHost || !r || !r.t || !r.dungeon || siteReqBusy) return;
@@ -1461,8 +1461,21 @@ function siteFeed() {
   const code = (state.siteCode || 'VOICE').toUpperCase();
   if (isHost) renderFzList();                    // 11-22 Friend Zone minis follow the site's table code
   if (!isHost || (siteES && siteCodeOn === code)) return;
-  siteES?.close(); siteBagES?.close(); siteParty = {}; siteBagRaw = {}; siteCodeOn = code;
+  siteES?.close(); siteBagES?.close(); siteRecruitsES?.close();
+  siteParty = {}; siteBagRaw = {}; siteCodeOn = code;
   siteES = new EventSource(`${SITE_DB}/tables/${encodeURIComponent(code)}/party.json`);
+  // Recruits can join or move camps while the tabletop is already open.
+  // A Firebase change event re-reads the current camp listing.
+  siteRecruitsES = new EventSource(`${SITE_DB}/tables/${encodeURIComponent(code)}/recruits.json`);
+  let recruitRefresh = 0;
+  const refreshRecruits = () => {
+    clearTimeout(recruitRefresh);
+    recruitRefresh = setTimeout(() => {
+      if (isHost && siteCodeOn === code) renderFzList(true);
+    }, 400);
+  };
+  siteRecruitsES.addEventListener('put', refreshRecruits);
+  siteRecruitsES.addEventListener('patch', refreshRecruits);
   // 11-22 (Twistedfocus: "I want this to send the request to the table top and make something for me"): the site's Dungeon
   // panel writes tables/<code>/ttreq = { t, dungeon, floor, floors, desc, event }; the GM's tabletop offers to build that floor
   siteReqES?.close();
@@ -5046,6 +5059,48 @@ async function addFzMini(name, species, sheet = '') {
   handle({ t: 'edit', id, sprite: d4, sheet }, clientId);
   select(id);
 }
+// Built-in residents are defined on the campaign site's Friend Zone map
+// (SPOT_CREW in js/friendzone.js). They are separate from player recruits.
+// A label is a nickname/title; species is always kept for sprite + stats.
+const FZ_CAMP_CREW = [
+  { location:'Woodland Base', spot:'Gravity Falls Guild', name:'Guildmaster Beautifly', species:'Beautifly' },
+  { location:'Woodland Base', spot:'Gravity Falls Guild', name:'Mimi', species:'Pikachu' },
+  { location:'Woodland Base', spot:'Gravity Falls Guild', name:'Kippy', species:'Mudkip' },
+  { location:'Woodland Base', spot:'Gravity Falls Guild', name:'Pikachu', species:'Pikachu' },
+  { location:'Woodland Base', spot:'Gravity Falls Guild', name:'Squirtle', species:'Squirtle' },
+  { location:'Woodland Base', spot:'Camp Staff', name:'Chandelure', species:'Chandelure' },
+  { location:'Woodland Base', spot:'Camp Staff', name:'Maushold', species:'Maushold' },
+  { location:'Woodland Base', spot:'Fernshade Camp', name:'Castform', species:'Castform' },
+  { location:'Woodland Base', spot:'Mossy Hollow', name:'Rayson', species:'Wingull' },
+  { location:'Woodland Base', spot:'Main Camp', name:'Beatrice', species:'Beedrill' },
+  { location:'Woodland Base', spot:'Miltankshack', name:'Miltank', species:'Miltank' },
+  { location:'Woodland Base', spot:'Mushroom Rest', name:'Nidorino', species:'Nidorino' }
+];
+const FZ_NICKNAMES = { teddiursa:'Teddy' };
+function fzIdentity(record) {
+  const raw = String(record?.name || '').trim();
+  const species = String(record?.species || record?.pokemon || (raw.toLowerCase() === 'teddy' ? 'Teddiursa' : raw)).trim();
+  const label = String(record?.nickname || FZ_NICKNAMES[raw.toLowerCase()] || raw).trim();
+  return { name:label, species };
+}
+function fzMiniCard(row, resident) {
+  const b = document.createElement('button'); b.className = 'fzBtn fit';
+  b.title = 'Put ' + resident.name + (resident.species.toLowerCase() !== resident.name.toLowerCase() ? ' (' + resident.species + ')' : '') + ' on the table';
+  const pic = document.createElement('span'); pic.className = 'fzPic';
+  const nm = document.createElement('span'); nm.textContent = resident.name;
+  b.append(pic, nm);
+  const sheet = okSheet(resident.walk);
+  b.onclick = () => addFzMini(resident.name, resident.species, sheet);
+  spriteFor(resident.species).then(async d4 => {
+    const a = d4 && await spriteData(d4);
+    if (!a || !b.isConnected) return;
+    const k = 56 / Math.max(a.w, a.h);
+    pic.style.backgroundImage = `url("${sheet ? SITE_BASE + sheet : `${SPR_RAW}${d4}/Walk-Anim.png`}")`;
+    pic.style.backgroundSize = `${a.w * a.n * k}px ${a.h * 8 * k}px`;
+    pic.style.backgroundPosition = `${-(a.w * k - 28) / 2}px ${-(a.h * k - 28) / 2}px`;
+  }).catch(() => {});
+  row.appendChild(b);
+}
 let fzLoaded = '';
 async function renderFzList(force) {
   const box = $('fzList');
@@ -5059,30 +5114,40 @@ async function renderFzList(force) {
   await loadIndex();
   box.innerHTML = '';
   const camps = Object.entries(rec || {});
-  if (!camps.length) { box.innerHTML = '<div class="fzNote">No Friend Zone recruits on the site yet (or it could not be reached). Type any Pokémon above.</div>'; return; }
+  // Camp crew is already published in the site's Friend Zone source. These
+  // are not invented recruits and do not modify the campaign's live database.
+  const staffHead = document.createElement('div'); staffHead.className = 'fzNote';
+  staffHead.textContent = 'Camp crew · permanent residents (separate from recruits)';
+  box.appendChild(staffHead);
+  const crewGroups = new Map();
+  for (const crew of FZ_CAMP_CREW) {
+    const key = crew.location + ' · ' + crew.spot;
+    if (!crewGroups.has(key)) crewGroups.set(key, []);
+    crewGroups.get(key).push(crew);
+  }
+  for (const [group, residents] of crewGroups) {
+    const hd = document.createElement('div'); hd.className = 'fzGroup'; hd.textContent = '📁 ' + group;
+    const row = document.createElement('div'); row.className = 'fzRow';
+    for (const resident of residents) fzMiniCard(row, resident);
+    box.append(hd, row);
+  }
+  const recruitHead = document.createElement('div'); recruitHead.className = 'fzNote';
+  recruitHead.textContent = 'Recruited Pokémon · synchronized with the Friend Zone';
+  box.appendChild(recruitHead);
+  if (!camps.length) {
+    const notice = document.createElement('div'); notice.className = 'fzNote';
+    notice.textContent = 'Live recruits are unavailable or not yet assigned. Camp crew remains available.';
+    box.appendChild(notice);
+    return;
+  }
   for (const [loc, spots] of camps) {
     for (const [spot, rs] of Object.entries(spots || {})) {
       const list = Object.values(rs || {}).filter(r => r && r.name);
       if (!list.length) continue;
       const hd = document.createElement('div'); hd.className = 'fzGroup'; hd.textContent = `📁 ${nice(loc)} · ${nice(spot)}`;
       const row = document.createElement('div'); row.className = 'fzRow';
-      for (const r of list.sort((a, b) => a.name.localeCompare(b.name))) {
-        const b = document.createElement('button'); b.className = 'fzBtn fit'; b.title = `Put ${r.name} on the table` + (r.type ? ` (${r.type})` : '');
-        const pic = document.createElement('span'); pic.className = 'fzPic';
-        const nm = document.createElement('span'); nm.textContent = r.name;
-        b.append(pic, nm);
-        const sheet = okSheet(r.walk);
-        b.onclick = () => addFzMini(r.name, r.name, sheet);
-        spriteFor(r.name).then(async d4 => {
-          const a = d4 && await spriteData(d4);
-          if (!a) return;
-          // the frames have lots of empty room round the Pokémon: show the middle of the first frame at twice the size
-          const k = 56 / Math.max(a.w, a.h);
-          pic.style.backgroundImage = `url("${sheet ? SITE_BASE + sheet : `${SPR_RAW}${d4}/Walk-Anim.png`}")`;
-          pic.style.backgroundSize = `${a.w * a.n * k}px ${a.h * 8 * k}px`;
-          pic.style.backgroundPosition = `${-(a.w * k - 28) / 2}px ${-(a.h * k - 28) / 2}px`;
-        });
-        row.appendChild(b);
+      for (const r of list.sort((a, b) => fzIdentity(a).name.localeCompare(fzIdentity(b).name))) {
+        fzMiniCard(row, { ...fzIdentity(r), walk:r.walk });
       }
       box.append(hd, row);
     }
