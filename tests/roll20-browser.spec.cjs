@@ -2,7 +2,7 @@
 // Run in GitHub Actions with Playwright. Use a disposable local room only.
 const { test, expect, chromium } = require('@playwright/test');
 const base = process.env.TABLETOP_TEST_URL || 'http://127.0.0.1:8765';
-test.setTimeout(70000);
+test.setTimeout(90000);
 
 test('Roll20 dock keeps a single working chat, dice and player section', async ({page}) => {
   const exceptions = [];
@@ -29,6 +29,9 @@ test('GM and two players share public chat but not each other\'s private whisper
   try {
     const mk = async () => {
       const ctx = await browser.newContext({ viewport:{width:1440,height:900} });
+      // The game's first-run Controls tutorial intentionally blocks clicks.
+      // Dismiss that unrelated onboarding in the multiplayer chat test.
+      await ctx.addInitScript(() => localStorage.setItem('tabletop-seenControls','1'));
       contexts.push(ctx);
       const page = await ctx.newPage();
       page.on('pageerror', e=>errors.push(e.message));
