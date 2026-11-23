@@ -35,13 +35,30 @@
     notice.textContent = "Looking for an existing saved scene…";
     document.dispatchEvent(new CustomEvent("votf:open-scene", { detail: { sceneId: scene.id, name: scene.name } }));
   }
+  const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } };
+  const savedChapter = Number(store("votfChapter"));
+  let lastStatus = "";
   function render() {
     const root = document.getElementById("votfLibrary");
     if (!root || !manifest) return;
     root.replaceChildren();
+    if (!manifest.chapters.some(c => c.id === selectedChapter) && manifest.chapters.length) selectedChapter = manifest.chapters[0].id;
     const heading = el("div", "votf-heading");
-    heading.append(el("strong", "", "🌳 Voice of the Forest"), el("span", "", "GM scene library · preparation only"));
-    root.append(heading);
+    const toggle = el("button", "votf-toggle");
+    toggle.type = "button";
+    const setOpen = open => {
+      root.classList.toggle("votf-closed", !open);
+      toggle.textContent = open ? "▾ Hide" : "▸ Show";
+      toggle.setAttribute("aria-expanded", String(open));
+      store("votfLibOpen", open ? "1" : "0");
+    };
+    toggle.addEventListener("click", () => setOpen(root.classList.contains("votf-closed")));
+    heading.append(el("strong", "", "🌳 Voice of the Forest scenes"), toggle);
+    root.append(heading,
+      el("div", "votf-help", "Pick a chapter, then press ▶ Open on a scene. Only you see it: the players stay where they are."));
+    const body = el("div", "votf-body");
+    root.append(body);
+    setOpen(store("votfLibOpen") !== "0");
     const progress = el("div", "votf-progress");
     progress.id = "votfProgress";
     progress.hidden = !lastProgress;
@@ -55,24 +72,76 @@
     progressBar.setAttribute("aria-label", "Operation progress");
     progressRow.append(progressBar, el("span", "votf-progress-percent", "0%"));
     progress.append(progressLabel, progressRow);
-    root.append(progress);
+    body.append(progress);
     showProgress();
-    const checkpointBox = el("div", "votf-checkpoints");
-    checkpointBox.append(el("strong", "", "Campaign checkpoints"));
+
+    // ---- 1. chapter picker (a dropdown instead of a long scrolling row) ----
+    const pick = el("div", "votf-pick");
+    const chapterLabel = el("label", "", "Chapter");
+    const chapterSelect = el("select");
+    chapterSelect.id = "votfChapterPick";
+    chapterLabel.htmlFor = chapterSelect.id;
+    for (const chapter of manifest.chapters) {
+      const n = (chapter.sceneIds || []).length;
+      const opt = el("option", "", chapter.id + ": " + chapter.title + (n ? "  (" + n + " scene" + (n === 1 ? "" : "s") + ")" : "  (no scenes yet)"));
+      opt.value = String(chapter.id);
+      opt.selected = chapter.id === selectedChapter;
+      chapterSelect.append(opt);
+    }
+    const goTo = id => { selectedChapter = id; query = ""; store("votfChapter", String(id)); render(); };
+    chapterSelect.addEventListener("change", () => goTo(Number(chapterSelect.value)));
+    const idx = manifest.chapters.findIndex(c => c.id === selectedChapter);
+    const prev = el("button", "", "◀");
+    prev.type = "button"; prev.title = "Previous chapter"; prev.disabled = idx <= 0;
+    prev.addEventListener("click", () => goTo(manifest.chapters[idx - 1].id));
+    const next = el("button", "", "▶");
+    next.type = "button"; next.title = "Next chapter"; next.disabled = idx >= manifest.chapters.length - 1;
+    next.addEventListener("click", () => goTo(manifest.chapters[idx + 1].id));
+    pick.append(chapterLabel, prev, chapterSelect, next);
+    body.append(pick);
+
+    // ---- 2. scenes ----
+    const chapterNow = manifest.chapters.find(c => c.id === selectedChapter);
+    const search = el("input", "votf-search");
+    search.type = "search";
+    search.value = query;
+    search.placeholder = "🔍 Find a scene in this chapter";
+    search.setAttribute("aria-label", "Find a scene");
+    search.addEventListener("input", () => { query = search.value; drawScenes(); });
+    if ((chapterNow?.sceneIds || []).length > 6 || query) body.append(search);
+    const list = el("div", "votf-scene-list");
+    const notice = el("div", "votf-notice", lastStatus);
+    notice.setAttribute("role", "status");
+    body.append(list, notice);
+
+    // ---- 3. checkpoints and backups (folded away until needed) ----
+    const checkpointBox = el("details", "votf-checkpoints");
+    checkpointBox.open = store("votfCpOpen") === "1";
+    checkpointBox.addEventListener("toggle", () => store("votfCpOpen", checkpointBox.open ? "1" : "0"));
+    const cpTitle = el("summary", "", "💾 Checkpoints & backups");
+    checkpointBox.append(cpTitle, el("div", "votf-help",
+      "A checkpoint saves the whole campaign so you can go back to it later. A backup is a file you keep on your computer."));
     const controls = el("div", "votf-checkpoint-actions");
     const checkpointName = el("input");
     checkpointName.type = "text";
     checkpointName.maxLength = 90;
-    checkpointName.placeholder = "Checkpoint name";
+    checkpointName.placeholder = "Name it, like: After the earthquake";
     checkpointName.setAttribute("aria-label", "New checkpoint name");
-    const create = el("button", "", "Save checkpoint");
+    const create = el("button", "", "💾 Save checkpoint");
     create.type = "button";
-    create.addEventListener("click", () => document.dispatchEvent(
-      new CustomEvent("votf:checkpoint-create", { detail: { name: checkpointName.value.trim() || "Campaign checkpoint" } })));
-    const exportButton = el("button", "", "Export backup");
+    const doCreate = () => {
+      document.dispatchEvent(new CustomEvent("votf:checkpoint-create",
+        { detail: { name: checkpointName.value.trim() || "Checkpoint " + new Date().toLocaleDateString() } }));
+      checkpointName.value = "";
+    };
+    create.addEventListener("click", doCreate);
+    checkpointName.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doCreate(); } });
+    const exportButton = el("button", "", "⬇️ Download backup");
     exportButton.type = "button";
+    exportButton.title = "Saves a backup file to your computer";
     exportButton.addEventListener("click", () => document.dispatchEvent(new Event("votf:checkpoint-export")));
-    const importButton = el("button", "", "Import backup");
+    const importButton = el("button", "", "⬆️ Load backup");
+    importButton.title = "Opens a backup file you saved before";
     importButton.type = "button";
     importButton.addEventListener("click", () => {
       const picker = el("input");
@@ -91,15 +160,19 @@
     const savedList = el("div", "votf-checkpoint-list");
     renderCheckpointList = () => {
       savedList.replaceChildren();
-      if (!checkpointEntries.length) savedList.append(el("small", "", "No checkpoints saved yet."));
+      cpTitle.textContent = "💾 Checkpoints & backups" + (checkpointEntries.length ? " (" + checkpointEntries.length + ")" : "");
+      if (!checkpointEntries.length) savedList.append(el("small", "", "No checkpoints yet. Save one before a big moment!"));
       for (const cp of checkpointEntries) {
         const line = el("div", "votf-checkpoint-row");
-        line.append(el("span", "", cp.name + " · " + new Date(cp.at).toLocaleString()));
-        const restore = el("button", "", "Restore");
+        line.append(el("span", "", cp.name + " · " + new Date(cp.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })));
+        const restore = el("button", "", "↩️ Go back to this");
         restore.type = "button";
+        restore.title = "Puts the campaign back the way it was (a safety copy is saved first)";
         restore.addEventListener("click", () => document.dispatchEvent(
           new CustomEvent("votf:checkpoint-restore", { detail: { id:cp.id } })));
-        const del = el("button", "", "Delete");
+        const del = el("button", "", "🗑️");
+        del.title = "Delete this checkpoint";
+        del.setAttribute("aria-label", "Delete checkpoint " + cp.name);
         del.type = "button";
         del.addEventListener("click", () => document.dispatchEvent(
           new CustomEvent("votf:checkpoint-delete", { detail: { id:cp.id } })));
@@ -107,29 +180,10 @@
         savedList.append(line);
       }
     };
-    checkpointBox.append(controls, savedList);
-    root.append(checkpointBox);
+    checkpointBox.append(savedList, controls);
+    body.append(checkpointBox, el("div", "votf-footnote",
+      "Scenes and checkpoints are saved in this browser. Download a backup now and then to keep them safe."));
     document.dispatchEvent(new Event("votf:checkpoint-list"));
-    const chapters = el("div", "votf-chapters");
-    for (const chapter of manifest.chapters) {
-      const button = el("button", selectedChapter === chapter.id ? "votf-active" : "", String(chapter.id) + ": " + chapter.title);
-      button.type = "button";
-      button.setAttribute("aria-pressed", String(selectedChapter === chapter.id));
-      button.addEventListener("click", () => { selectedChapter = chapter.id; render(); });
-      chapters.append(button);
-    }
-    root.append(chapters);
-    const search = el("input", "votf-search");
-    search.type = "search";
-    search.value = query;
-    search.placeholder = "Filter scenes in this chapter";
-    search.setAttribute("aria-label", "Filter scenes");
-    search.addEventListener("input", () => { query = search.value; drawScenes(); });
-    root.append(search);
-    const list = el("div", "votf-scene-list");
-    const notice = el("div", "votf-notice");
-    notice.setAttribute("role", "status");
-    root.append(list, notice);
     function drawScenes() {
       list.replaceChildren();
       const chapter = manifest.chapters.find(c => c.id === selectedChapter);
@@ -140,22 +194,24 @@
       for (const scene of matches) {
         const card = el("div", "votf-scene");
         const name = el("strong", "", scene.name);
-        const description = el("small", "", scene.kind + (scene.grid ? " · " + scene.grid.cols + "×" + scene.grid.rows : ""));
-        const btn = el("button", "", "Open saved scene");
+        const description = el("span", "votf-tag", (scene.kind || "scene") + (scene.grid ? " · " + scene.grid.cols + "×" + scene.grid.rows : ""));
+        const btn = el("button", "votf-open", "▶ Open");
         btn.type = "button";
+        btn.title = "Open this scene for you (the GM). Players don't move.";
         btn.addEventListener("click", () => openExisting(scene, notice));
         card.append(name, description, btn);
         if (scene.id) {
-          const close = el("button", "", "Save & close scene");
+          const close = el("button", "", "💾 Save & close");
+          close.title = "Saves this scene and takes it off the table (you can open it again anytime)";
           close.type = "button";
           close.addEventListener("click", () => document.dispatchEvent(
             new CustomEvent("votf:close-scene", { detail: { sceneId: scene.id } })));
           card.append(close);
         }
         if (scene.originalFilename && scene.grid) {
-          const importer = el("button", "", "Import original PNG");
+          const importer = el("button", "votf-link", "🖼️ Add map picture");
           importer.type = "button";
-          importer.title = "Import a local copy of " + scene.originalFilename + " into a new GM-only board";
+          importer.title = "First time only: pick " + scene.originalFilename + " from your computer to make this scene";
           importer.addEventListener("click", () => {
             const input = el("input");
             input.type = "file";
@@ -180,8 +236,7 @@
         }
         list.append(card);
       }
-      if (!matches.length) list.append(el("p", "", ids.length ? "No matching scenes." : "Scenes not yet assigned."));
-      notice.textContent = "GM library: imported scenes are saved in your browser. Back up before clearing site data.";
+      if (!matches.length) list.append(el("p", "votf-help", ids.length ? "No scenes match that search." : "No scenes in this chapter yet."));
     }
     drawScenes();
   }
@@ -201,8 +256,10 @@
     renderCheckpointList();
   });
   document.addEventListener("votf:scene-status", e => {
+    if (typeof e.detail?.message !== "string") return;
+    lastStatus = e.detail.message;                    // kept, so it survives switching chapters
     const notice = document.querySelector("#votfLibrary .votf-notice");
-    if (notice && typeof e.detail?.message === "string") notice.textContent = e.detail.message;
+    if (notice) notice.textContent = lastStatus;
   });
   async function init() {
     const body = document.getElementById("placesBody");
@@ -216,6 +273,7 @@
       if (!response.ok) throw new Error("HTTP " + response.status);
       manifest = await response.json();
       if (!Array.isArray(manifest.chapters) || !Array.isArray(manifest.scenes)) throw new Error("Invalid scene registry");
+      if (manifest.chapters.some(c => c.id === savedChapter)) selectedChapter = savedChapter;   // the chapter she used last
       render();
     } catch (err) {
       root.append(el("p", "", "Scene library unavailable: " + err.message));
