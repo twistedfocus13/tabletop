@@ -267,11 +267,16 @@ function playerGmFog() {
 function playerGmLights() {
   return (state.gmLights || []).filter(x => shown(boardAt(x.x,x.z))).map(x => ({ ...x }));
 }
-function viewFor() {
+// Player reconnections should include only public history and messages they
+// personally sent or received; never send other players' whispers.
+function logForViewer(cid) {
+  return state.log.filter(entry => !entry.to || entry.to === cid || entry.from === cid);
+}
+function viewFor(cid) {
   const figures = {}, tiles = {};
   for (const f of Object.values(state.figures)) if (figVisible(f)) figures[f.id] = f;
   for (const [k, t] of Object.entries(state.tiles)) { const v = playerTile(k, t); if (v) tiles[k] = v; }
-  return { boards: state.boards.filter(shown), figures, players: state.players, log: state.log.filter(l => !l.to), gm: state.gm,
+  return { boards: state.boards.filter(shown), figures, players: state.players, log: cid ? logForViewer(cid) : state.log.filter(l => !l.to), gm: state.gm,
     models: state.models, tiles, gmFog: playerGmFog(), gmLights: playerGmLights(), combat: combatView(), rules: state.rules, explored: state.explored, party: state.party, pending: [], event: null, threat: 0, paused: state.paused,
     attack: state.attack, warp: state.warp, ending: state.ending || null, warpUsed: {}, library: {}, boardLib: {}, areas: areasView(), dungeon: state.dungeon, bg: state.bg || '', bag: state.bag, siteBag: state.siteBag || [] };
 }
@@ -370,7 +375,7 @@ function onHostData(conn, msg) {
       for (const k of ['dex', 'alert', 'hp', 'hpMax']) if (st[k] == null) st[k] = 1;
       f.st = st;
     }
-    conn.send({ t: 'welcome', state: viewFor() });
+    conn.send({ t: 'welcome', state: viewFor(cid) });
     for (const [id, map] of Object.entries(state.maps)) if (!offView(state.boards.find(b => b.id === id))) conn.send({ t: 'map', id, map });
     for (const [id, data] of modelData) conn.send({ t: 'model', id, name: state.models[id]?.name, data });
     sendAll({ t: 'figs', figures: viewFor().figures });
