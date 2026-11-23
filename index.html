@@ -726,6 +726,20 @@
     #r20Dock #log { min-height:30vh; }
   }
 
+
+  /* Auxiliary narrow tool rail, inspired by the reference's vertical action strip. */
+  body.gm:not(.previewing) #gmLayerToolbar { gap:5px; }
+  #r20QuickTools { display:flex; flex-direction:column; gap:3px; padding:6px 3px; background:#151518ee; border:1px solid #39323e; border-radius:12px; box-shadow:0 5px 18px #0008; }
+  #r20QuickTools .r20-quick-btn { width:35px; height:36px; flex:none; display:grid; place-items:center; border:1px solid transparent; border-radius:8px; background:#303035; color:#eae3eb; font-family:system-ui,sans-serif; font-size:21px; line-height:1; padding:0; }
+  #r20QuickTools .r20-quick-btn:hover, #r20QuickTools .r20-quick-btn:focus-visible { background:#60456a; border-color:#b88cc7; color:#fff; }
+  @media (min-width:701px) {
+    #r20Dock { height:100%; min-height:100%; flex:1 1 auto; }
+  }
+  @media (max-width:700px) {
+    #r20QuickTools { padding:3px 2px; gap:1px; }
+    #r20QuickTools .r20-quick-btn { width:30px; height:31px; font-size:18px; }
+  }
+
 </style>
 </head>
 <body>
