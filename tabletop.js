@@ -1025,6 +1025,12 @@ function handle(msg, from) {
     case 'boardPlace': {                        // put a saved board on the table, to the right of the others
       const L = gm && state.boardLib?.[msg.lib];
       if (!L) return;
+      // One editable instance per campaign scene. Duplicate instances would
+      // otherwise race to overwrite the same persistent scene snapshot.
+      if (L.campaignId === 'voice-of-the-forest' && L.sceneId) {
+        const existing = state.boards.find(b => b.lib === msg.lib);
+        if (existing) return existing.id;
+      }
       // msg.layer (11-22 places bar): open the place on its own layer, like a Roll20 page; else next to the GM's boards
       const lay = msg.layer ? Math.max(1, Math.min(20, Math.round(+msg.layer))) : gmLayer;
       const first = !state.boards.some(x => layerOf(x) === lay), box = boardsBox(lay);
@@ -2750,6 +2756,21 @@ async function votfSnapshot(name, permanent = true) {
     persistent.players[id] = { ...p, online:false };
   votfProgress('checkpoint', 1, 4, 'Reading saved maps and models');
   const assets = (await blobs.dump()).filter(([key]) => !String(key).startsWith(VOTF_CHECKPOINT_PREFIX));
+  const present = new Set(assets.map(([key]) => key));
+  // Pending IndexedDB writes must not produce a checkpoint that omits
+  // a map still present in the current game session.
+  for (const [boardId, map] of Object.entries(state.maps || {})) {
+    const key = 'map:' + boardId;
+    if (map && !present.has(key)) { assets.push([key, map]); present.add(key); }
+  }
+  for (const [id, lib] of Object.entries(state.boardLib || {})) {
+    if (!lib.map || present.has('boardlib:' + id)) continue;
+    const placed = state.boards.find(b => b.lib === id && state.maps[b.id]);
+    if (placed) {
+      assets.push(['boardlib:' + id, state.maps[placed.id]]);
+      present.add('boardlib:' + id);
+    } else throw Error('A saved scene image is missing from browser storage: ' + lib.name);
+  }
   const id = 'cp-' + Date.now() + '-' + rid(5);
   const record = { format:'votf-tabletop-checkpoint', version:1, id,
     name:clean(name,90) || 'Campaign checkpoint', at:new Date().toISOString(),
@@ -5990,6 +6011,9 @@ function enterGame() {
   $('whoAmI').textContent = isHost ? `You are the GM (${myName}). You can move everything.` : `You are ${myName}. You can move your own mini (white ring).`;
   if (!renderer) { initView(); wirePanel(); }
   rebuildAll();
+  // The scene browser mounts while the lobby is visible; request checkpoint
+  // metadata again once the GM room is actually ready.
+  if (isHost) document.dispatchEvent(new Event('votf:checkpoint-list'));
   if (!isHost && !selectedId) { const own = myMini(); if (own) select(own.id); }   // players start with their own mini picked
 }
 
