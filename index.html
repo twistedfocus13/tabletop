@@ -568,6 +568,38 @@
   #fzList .fzNote { color: var(--dim); font-size: 12px; }
   /* the floor name tag sat where the Places tab hangs: below it for the GM */
   body.gm:not(.previewing) #floorTag { top: 40px; }
+  /* Optional Voice of the Forest chapter browser: GM-only, inside Places */
+  .votf-library { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 9px; background: var(--panel2); }
+  .votf-heading { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:7px; flex-wrap:wrap; }
+  .votf-heading span { color:var(--dim); font-size:11px; }
+  .votf-chapters { display:flex; gap:5px; overflow-x:auto; padding-bottom:5px; }
+  .votf-chapters button { flex:0 0 auto; font-size:12px; padding:4px 8px; }
+  .votf-chapters .votf-active { border-color:var(--accent); outline:1px solid var(--accent); }
+  .votf-search { width:100%; margin:5px 0 7px; box-sizing:border-box; }
+  .votf-scene-list { display:flex; gap:7px; overflow-x:auto; padding-bottom:4px; }
+  .votf-scene { display:flex; flex-direction:column; flex:0 0 176px; gap:5px; border:1px solid var(--line); border-radius:7px; padding:8px; }
+  .votf-scene strong { font-size:12px; }
+  .votf-scene small { color:var(--dim); }
+  .votf-scene button { margin-top:auto; font-size:11px; }
+  .votf-notice { color:var(--dim); font-size:11px; margin-top:6px; }
+
+  /* Voice of the Forest operation status: measured milestones, never a simulated timer */
+  .votf-progress[hidden] { display: none; }
+  .votf-progress { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0 10px; background:var(--panel); }
+  .votf-progress-label { font-size:12px; margin-bottom:6px; line-height:1.3; }
+  .votf-progress-row { display:flex; align-items:center; gap:8px; }
+  .votf-progress progress { flex:1; display:block; height:12px; min-width:0; accent-color:var(--accent); }
+  .votf-progress-percent { min-width:42px; text-align:right; font-size:12px; font-variant-numeric:tabular-nums; }
+  .votf-progress[data-status="success"] progress { accent-color:#40b881; }
+  .votf-progress[data-status="error"] progress { accent-color:#db625f; }
+  .votf-checkpoints { border-top:1px solid var(--line); padding:9px 0; margin:4px 0 8px; }
+  .votf-checkpoint-actions { display:flex; flex-wrap:wrap; gap:5px; margin:7px 0; }
+  .votf-checkpoint-actions input { flex:1 1 175px; min-width:110px; }
+  .votf-checkpoint-actions button, .votf-checkpoint-row button { font-size:11px; }
+  .votf-checkpoint-list { max-height:150px; overflow:auto; }
+  .votf-checkpoint-row { display:flex; align-items:center; gap:6px; padding:5px 0; border-top:1px solid var(--line); }
+  .votf-checkpoint-row span { flex:1; font-size:11px; }
+
 </style>
 </head>
 <body>
@@ -996,5 +1028,6 @@
 } }
 </script>
 <script type="module" src="tabletop.js?v=112"></script>
+<script defer src="campaigns/voice-of-the-forest/library.js?v=1"></script>
 </body>
 </html>
