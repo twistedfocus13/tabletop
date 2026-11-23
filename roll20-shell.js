@@ -83,6 +83,33 @@
     }
     dock.append(panes);
     side.insertBefore(dock,side.firstChild);
+    // Reference-style GM tool rail. Every item triggers an existing native tool.
+    // No fake drawing/text/FX controls: labels only promise supported behavior.
+    const layerBar=$("gmLayerToolbar"),layerButtons=$("gmLayerButtons");
+    if(layerBar&&layerButtons&&!$("r20QuickTools")){
+      const quick=make("div","r20-quick-tools");quick.id="r20QuickTools";
+      const options=[
+        {icon:"➤",name:"Select tokens",run:()=>layerButtons.querySelector('[data-layer-mode="tokens"]')?.click()},
+        {icon:"✋",name:"Pan the map",run:()=>{layerButtons.querySelector('[data-layer-mode="tokens"]')?.click();}},
+        {icon:"✎",name:"Paint terrain",run:()=>{
+          layerButtons.querySelector('[data-layer-mode="map"]')?.click();
+          $("gmTabs")?.querySelector('[data-tab="terrain"]')?.click();
+          if(!$("paintBtn")?.classList.contains("on"))$("paintBtn")?.click();
+        }},
+        {icon:"◫",name:"Measure area",run:()=>{$("gmTabs")?.querySelector('[data-tab="combat"]')?.click();$("areaPlace")?.click();}},
+        {icon:"⌖",name:"Ping location",run:()=>{$("pingBtn")?.click();}},
+        {icon:"⚄",name:"Dice",run:()=>show("dice")},
+        {icon:"⚙",name:"Settings",run:()=>show("settings")}
+      ];
+      for(const item of options){
+        const button=make("button","r20-quick-btn",item.icon);
+        button.type="button";button.title=item.name;
+        button.setAttribute("aria-label",item.name);
+        button.addEventListener("click",item.run);
+        quick.append(button);
+      }
+      layerBar.append(quick);
+    }
     // Move the real components; never duplicate their IDs or handlers.
     $("r20Chat").append(logSec);
     const chatTips=make("details","r20-chat-tips");
