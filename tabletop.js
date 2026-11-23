@@ -1043,12 +1043,25 @@ function handle(msg, from) {
         if (inside(i + 0.5, j + 0.5)) { moved[(i + dx) + ',' + (j + dz)] = t; set[k] = null; delete state.tiles[k]; }
       }
       Object.assign(state.tiles, moved); Object.assign(set, moved);
+      // Fog squares and placed lights stay attached to a moved map board.
+      const shiftedFog = {};
+      for (const k of Object.keys(state.gmFog || {})) {
+        const [i,j] = k.split(',').map(Number);
+        if (!inside(i + .5,j + .5)) continue;
+        shiftedFog[(i + dx) + ',' + (j + dz)] = true;
+        delete state.gmFog[k];
+      }
+      Object.assign(state.gmFog,shiftedFog);
+      for (const light of state.gmLights || []) if (inside(light.x,light.z)) {
+        light.x += dx;light.z += dz;
+      }
       const riders = Object.values(state.figures).filter(f => inside(f.x, f.z) && !(f.parent && state.figures[f.parent] && inside(state.figures[f.parent].x, state.figures[f.parent].z)));
       b.x += dx; b.z += dz;
       for (const f of riders) { f.x += dx; f.z += dz; pushFig(f); carry(f.id, dx, dz, 0, f); }
-      tilesChanged();
+      tilesChanged(); refreshGmFog(); refreshGmLights();
       sendTiles(set);
       boardsChanged();
+      resyncPlayers();
       break;
     }
     case 'boardSave': {                         // GM: keep a copy of a board (size, grid, picture, terrain, GM minis on it) in a labelled group
@@ -1065,8 +1078,15 @@ function handle(msg, from) {
         const { id: fid, x, z, ...rest } = f;
         figs.push({ ...JSON.parse(JSON.stringify(rest)), old: fid, dx: x - b.x, dz: z - b.z });
       }
+      const gmFog = {};
+      for (const k of Object.keys(state.gmFog || {})) {
+        const [i,j] = k.split(',').map(Number);
+        if (boardAt(i+.5,j+.5) === b) gmFog[(i-b.x)+','+(j-b.z)] = true;
+      }
+      const gmLights = (state.gmLights || []).filter(x => boardAt(x.x,x.z) === b)
+        .map(({id,x,z,...rest}) => ({...rest,dx:x-b.x,dz:z-b.z}));
       state.boardLib[id] = { name: clean(msg.name, 40) || `Board ${b.cols}x${b.rows}`, group: clean(msg.group, 30) || 'Ungrouped',
-        cols: b.cols, rows: b.rows, grid: b.grid, tiles, figs, map: !!state.maps[b.id] };
+        cols: b.cols, rows: b.rows, grid: b.grid, tiles, figs, gmFog, gmLights, map: !!state.maps[b.id] };
       if (state.maps[b.id]) blobs.set('boardlib:' + id, state.maps[b.id]);
       renderBoardLib(); save();
       note(from, `Saved "${state.boardLib[id].name}" in ${state.boardLib[id].group}.`);
