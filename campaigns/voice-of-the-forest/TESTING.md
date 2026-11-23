@@ -47,3 +47,23 @@ Keep PR #1 draft. Test in two browsers and confirm preexisting saved boards and 
 - Test GM and player views separately. Check that A and D no longer trigger attack/dash shortcuts (those formerly conflicted with WASD).
 - Test 3D and sprite minis, and check the jump ends at the normal ground elevation without cumulative vertical drift.
 - Multiplayer browser regression testing is still required before merging.
+
+## Persistence and multiplayer regression pass (follow-up branch)
+### Automated/isolated logic
+- Scene snapshots: terrain, traps, GM-owned Pokémon/NPC positions and HP persist; player-owned party figures are excluded from templates.
+- Scene unloading: reject the current live layer or any scene with a player-owned Pokémon.
+- Template protection: `boardPlace` must return the already-open scene board ID for an imported campaign scene rather than spawning a duplicate.
+- Backup assets: ensure pending map writes and missing scene images cannot silently create incomplete checkpoints.
+- Export/import: verify binary model bytes survive JSON serialization and rehydration.
+- Player view: current-layer boards only; no saved-board library or unrevealed scene templates sent to clients.
+
+### Two-browser acceptance scenario (requires a GM and a player session)
+1. **Before testing**, create a named checkpoint and export a downloadable backup; verify the JSON file is present.
+2. Connect a separate player browser to the GM room. In the GM-only Places panel, import a Fissure Cave map and confirm the player cannot see it while the team remains on another layer.
+3. Place one GM-controlled NPC in that scene, set a distinctive HP value, paint a wall and hidden trap, and save the game. Confirm the player does not see those prep changes.
+4. Close/reopen the GM-only scene and check the NPC HP, terrain and trap return without extra duplicate NPCs; repeatedly open the scene card to ensure it does not add layers.
+5. Try to close the scene while the party is there; verify the action refuses. Move the party to a safe layer through the existing GM travel control, then save/close/reopen and verify world changes persist.
+6. With the player disconnected, create a checkpoint, make changes, restore it, and confirm both the state and map artwork reappear correctly. Test a JSON export/import round trip using a disposable test game, **not the primary campaign**.
+7. Reconnect the player. Check that only the current layer appears, enemies on GM-only layers are absent, and normal WASD movement / Space animation still synchronize.
+
+**Release gate:** The tests above are required before merging these follow-up hardening changes. No actual two-browser verification has been performed by the assistant.
