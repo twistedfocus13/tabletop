@@ -5849,7 +5849,18 @@ function renderLogEntry(e) {
   else {
     const n = document.createElement('b'); n.textContent = e.name + (e.kind === 'chat' ? ': ' : ' ');
     if (e.color) n.style.color = e.color;
-    d.appendChild(n); d.appendChild(document.createTextNode(e.text + (e.to ? ' (hidden)' : '')));
+    d.appendChild(n);
+    const diceMatch = e.kind === 'roll' && /^rolled \d+d\d+:/.test(e.text) && /(\d+)$/.exec(e.text);
+    if (diceMatch) {
+      const result = diceMatch[1];
+      d.appendChild(document.createTextNode(e.text.slice(0, -result.length)));
+      const badge = document.createElement('span');
+      badge.className = 'r20-roll-result';
+      badge.textContent = result;
+      badge.setAttribute('aria-label', 'Roll result ' + result);
+      d.appendChild(badge);
+      if (e.to) d.appendChild(document.createTextNode(' (GM only)'));
+    } else d.appendChild(document.createTextNode(e.text + (e.to ? ' (hidden)' : '')));
   }
   const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
   el.appendChild(d);
