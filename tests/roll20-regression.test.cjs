@@ -53,9 +53,9 @@ test('private conversation history is returned only to its participants',()=>{
  const ctx={state};
  vm.createContext(ctx);
  vm.runInContext(section('function logForViewer(cid) {','function viewFor(cid) {'),ctx);
- assert.deepEqual(ctx.logForViewer('a').map(x=>x.text),['public','A to B','GM to A']);
- assert.deepEqual(ctx.logForViewer('c').map(x=>x.text),['public','C to GM']);
- assert.deepEqual(ctx.logForViewer('b').map(x=>x.text),['public','A to B']);
+ assert.deepEqual([...ctx.logForViewer('a')].map(x=>x.text),['public','A to B','GM to A']);
+ assert.deepEqual([...ctx.logForViewer('c')].map(x=>x.text),['public','C to GM']);
+ assert.deepEqual([...ctx.logForViewer('b')].map(x=>x.text),['public','A to B']);
  assert.match(src,/conn\.send\(\{ t: 'welcome', state: viewFor\(cid\) \}\)/);
 });
 test('right sidebar reuses the same live DOM elements, with no duplicate chat/dice list',()=>{
