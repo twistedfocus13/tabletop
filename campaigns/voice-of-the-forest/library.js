@@ -21,17 +21,18 @@
     return savedPlaceCards().find(card => targets.includes(normalize(card.querySelector(".pcName")?.textContent)));
   }
   function openExisting(scene, notice) {
+    // Prefer persistent scene identity; the game module handles existing/open layers.
+    document.dispatchEvent(new CustomEvent("votf:open-scene", { detail: { sceneId: scene.id } }));
     const found = matchSavedPlace(scene);
     if (found) { found.click(); return; }
-    // Saved boards may be in another folder. Search existing folder buttons
-    // without modifying the saved-board library or loading a missing map.
+    // Legacy saved boards may use scene names but have no scene ID.
     const folders = [...document.querySelectorAll("#placesFolders button:not(.pfSave)")];
     for (const button of folders) {
       button.click();
       const card = matchSavedPlace(scene);
       if (card) { card.click(); return; }
     }
-    notice.textContent = "Not in Saved Places yet. Add its original image to a board, save that board with the scene name, and try again.";
+    notice.textContent = "Not yet imported. Use Import original PNG once to create this scene safely.";
   }
   function render() {
     const root = document.getElementById("votfLibrary");
@@ -71,10 +72,36 @@
         const card = el("div", "votf-scene");
         const name = el("strong", "", scene.name);
         const description = el("small", "", scene.kind + (scene.grid ? " · " + scene.grid.cols + "×" + scene.grid.rows : ""));
-        const btn = el("button", "", "Find saved place");
+        const btn = el("button", "", "Open saved scene");
         btn.type = "button";
         btn.addEventListener("click", () => openExisting(scene, notice));
         card.append(name, description, btn);
+        if (scene.originalFilename && scene.grid) {
+          const importer = el("button", "", "Import original PNG");
+          importer.type = "button";
+          importer.title = "Import a local copy of " + scene.originalFilename + " into a new GM-only board";
+          importer.addEventListener("click", () => {
+            const input = el("input");
+            input.type = "file";
+            input.accept = "image/png,image/jpeg,image/webp";
+            input.style.display = "none";
+            input.addEventListener("change", () => {
+              const file = input.files && input.files[0];
+              input.remove();
+              if (!file) return;
+              if (file.name !== scene.originalFilename &&
+                !confirm("Selected " + file.name + " instead of " + scene.originalFilename + ". Import this image for " + scene.name + "?")) return;
+              notice.textContent = "Importing original image into a new private scene…";
+              document.dispatchEvent(new CustomEvent("votf:import-scene", {
+                detail: { sceneId: scene.id, name: scene.name, chapterId: selectedChapter,
+                  originalFilename: scene.originalFilename, cols: scene.grid.cols, rows: scene.grid.rows, file }
+              }));
+            }, { once: true });
+            document.body.append(input);
+            input.click();
+          });
+          card.append(importer);
+        }
         list.append(card);
       }
       if (!matches.length) list.append(el("p", "", ids.length ? "No matching scenes." : "Scenes not yet assigned."));
@@ -82,6 +109,10 @@
     }
     drawScenes();
   }
+  document.addEventListener("votf:scene-status", e => {
+    const notice = document.querySelector("#votfLibrary .votf-notice");
+    if (notice && typeof e.detail?.message === "string") notice.textContent = e.detail.message;
+  });
   async function init() {
     const body = document.getElementById("placesBody");
     if (!body) return;
