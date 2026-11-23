@@ -380,6 +380,7 @@ function onClientData(msg) {
       break;
     case 'fig': upsertFig(msg.fig); renderHud(); break;
     case 'figs': state.figures = msg.figures; syncFigures(); renderHud(); break;
+    case 'jumpFx': if (typeof msg.id === 'string') startMiniJump(msg.id); break;
     case 'del': delete state.figures[msg.id]; removeFigMesh(msg.id); renderHud(); break;
     case 'boards': state.boards = msg.boards; buildBoard(); updateBoardInputs(); break;
     case 'tiles':
@@ -431,6 +432,13 @@ function handle(msg, from) {
   const f = msg.id ? state.figures[msg.id] : null;
   const mayMove = f && (gm || f.owner === from);
   switch (msg.t) {
+    case 'jump': {
+      if (!mayMove || state.paused || !boardAt(f.x, f.z) || !shown(boardAt(f.x, f.z))) return;
+      if (state.combat && state.combat.order[state.combat.turn]?.id !== f.id && !gm) return;
+      startMiniJump(f.id);
+      sendAll({ t: 'jumpFx', id: f.id });
+      break;
+    }
     case 'move': {
       if (!mayMove) return;
       if (state.paused && !gm) { pushFig(f); if (msg.done) note(from, 'Paused: the GM is resolving an event.'); return; }
@@ -1058,6 +1066,17 @@ function handle(msg, from) {
       if (!gm || state.boards.length < 2) return;
       const b = state.boards.find(x => x.id === msg.id);
       if (!b) return;
+      if (state.boardLib?.[b.lib]?.campaignId === 'voice-of-the-forest' && state.boardLib?.[b.lib]?.sceneId) {
+        if (layerOf(b) === (state.live || 1) || Object.values(state.figures).some(f => f.owner && boardAt(f.x,f.z) === b)) {
+          votfSceneStatus('Cannot delete an active campaign scene or one containing a player Pokémon. Move players first.');
+          return;
+        }
+        votfCaptureScene(b);
+        // The deleted board's saved NPCs are reconstructed on a future visit.
+        for (const [id,f] of Object.entries(state.figures)) if (!f.owner && boardAt(f.x,f.z) === b) {
+          delete state.figures[id]; sendAll({ t:'del', id });
+        }
+      }
       state.boards = state.boards.filter(x => x !== b);
       delete state.maps[b.id]; blobs.set('map:' + b.id, null);
       sendAll({ t: 'map', id: b.id, map: null });
@@ -1090,6 +1109,11 @@ function handle(msg, from) {
       const map = typeof msg.map === 'string' && msg.map.startsWith('data:image/') ? msg.map : null;
       if (map) state.maps[b.id] = map; else delete state.maps[b.id];
       blobs.set('map:' + b.id, map);
+      if (state.boardLib?.[b.lib]?.sceneId) {
+        state.boardLib[b.lib].map = !!map;
+        blobs.set('boardlib:' + b.lib, map);
+        placePics.delete(b.lib);
+      }
       buildBoard();
       if (shown(b)) sendAll({ t: 'map', id: b.id, map });
       save();
@@ -2652,6 +2676,302 @@ function setPlacesOpen(on) {
   if (on) renderPlaces();
 }
 
+// ---------- Persistent Voice of the Forest scene snapshots ----------
+// The original image is stored in IndexedDB. This records changing scenery,
+// terrain, and GM-owned NPCs without duplicating player-owned party figures.
+// A scene's editable state belongs to its stable saved-board sceneId.
+function votfCaptureScene(board) {
+  const template = state.boardLib?.[board.lib];
+  if (!template?.sceneId || template.campaignId !== 'voice-of-the-forest') return;
+  const within = (x,z) => x >= board.x && x < board.x + board.cols && z >= board.z && z < board.z + board.rows;
+  const tiles = {}, figs = [];
+  for (const [key, value] of Object.entries(state.tiles)) {
+    const [x,z] = key.split(',').map(Number);
+    if (within(x + 0.5,z + 0.5) && boardAt(x + 0.5,z + 0.5) === board)
+      tiles[(x - board.x) + ',' + (z - board.z)] = value;
+  }
+  for (const f of Object.values(state.figures)) {
+    if (f.owner || !within(f.x,f.z) || boardAt(f.x,f.z) !== board) continue;
+    const { id, x, z, ...rest } = f;
+    figs.push({ ...JSON.parse(JSON.stringify(rest)), old:id, dx:x - board.x, dz:z - board.z });
+  }
+  Object.assign(template, { cols:board.cols, rows:board.rows, grid:board.grid, tiles, figs });
+}
+function votfCaptureLoadedScenes() {
+  if (!state?.boardLib) return;
+  for (const b of state.boards) if (b.lib) votfCaptureScene(b);
+}
+function votfCloseScene(board, notify = true) {
+  const template = state.boardLib?.[board.lib];
+  if (!template?.sceneId || template.campaignId !== 'voice-of-the-forest') return false;
+  if (layerOf(board) === (state.live || 1)) {
+    if (notify) votfSceneStatus('Cannot close the players\' current layer. Move them elsewhere first.');
+    return false;
+  }
+  if (state.boards.some(other => other.id !== board.id && layerOf(other) === layerOf(board))) {
+    if (notify) votfSceneStatus('This layer contains another board. Move it before closing this scene.');
+    return false;
+  }
+  if (Object.values(state.figures).some(f => f.owner && boardAt(f.x,f.z) === board)) {
+    if (notify) votfSceneStatus('A player-owned Pokémon is still on this scene. Move the team before closing.');
+    return false;
+  }
+  votfCaptureScene(board);
+  // The boardDel action snapshots this board and then removes its GM NPCs.
+  // Do not remove figures here, or its second snapshot would be empty.
+  handle({ t:'boardDel', id:board.id }, clientId);
+  if (notify) votfSceneStatus('Scene saved and unloaded. Reopen it to restore terrain and NPCs.');
+  return true;
+}
+
+// ---------- Voice of the Forest: GM-only named checkpoints ----------
+// Backup includes the host's entire persistent state and IndexedDB map/model blobs.
+// Checkpoints are kept separate from the existing game save and never broadcast.
+function votfProgress(task, completed, total, message, status = 'running') {
+  const fraction = Math.max(0, Math.min(1, completed / Math.max(total, 1)));
+  document.dispatchEvent(new CustomEvent('votf:progress', {
+    detail: { task, completed, total, percent: Math.round(100 * fraction), message, status }
+  }));
+}
+const VOTF_CHECKPOINT_INDEX = 'tabletop.votf.checkpoints';
+const VOTF_CHECKPOINT_PREFIX = 'votf:checkpoint:';
+const votfCheckpointIndex = () => store.get(VOTF_CHECKPOINT_INDEX) || [];
+function votfCheckpointList() {
+  document.dispatchEvent(new CustomEvent('votf:checkpoints', { detail: {
+    entries: votfCheckpointIndex().map(x => ({ id:x.id, name:x.name, at:x.at }))
+  } }));
+}
+async function votfSnapshot(name, permanent = true) {
+  if (!isHost) throw Error('Only the GM can save checkpoints.');
+  votfProgress('checkpoint', 0, 4, 'Capturing scene changes');
+  votfCaptureLoadedScenes();
+  const persistent = { ...state, maps:{}, players:{} };
+  for (const [id,p] of Object.entries(state.players))
+    persistent.players[id] = { ...p, online:false };
+  votfProgress('checkpoint', 1, 4, 'Reading saved maps and models');
+  const assets = (await blobs.dump()).filter(([key]) => !String(key).startsWith(VOTF_CHECKPOINT_PREFIX));
+  const id = 'cp-' + Date.now() + '-' + rid(5);
+  const record = { format:'votf-tabletop-checkpoint', version:1, id,
+    name:clean(name,90) || 'Campaign checkpoint', at:new Date().toISOString(),
+    room:roomCode, state:JSON.parse(JSON.stringify(persistent)), assets };
+  votfProgress('checkpoint', 2, 4, 'Assembling checkpoint');
+  if (permanent) {
+    await blobs.set(VOTF_CHECKPOINT_PREFIX + id, record);
+    const check = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
+    if (!check || check.id !== id || check.assets?.length !== assets.length)
+      throw Error('Checkpoint could not be verified in browser storage; export a backup instead.');
+    const index = votfCheckpointIndex();
+    if (!store.set(VOTF_CHECKPOINT_INDEX, [{ id, name:record.name, at:record.at }, ...index]))
+      throw Error('Checkpoint written but its index could not be saved (browser storage full).');
+    votfCheckpointList();
+  }
+  votfProgress('checkpoint', 4, 4, permanent ? 'Checkpoint verified' : 'Backup snapshot prepared', 'success');
+  return record;
+}
+function votfBackupReplacer(key, value) {
+  const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) :
+    ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
+  if (!bytes) return value;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 16384)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 16384));
+  return { __votfBytes:'base64', data:btoa(binary) };
+}
+function votfBackupReviver(key, value) {
+  if (!value || value.__votfBytes !== 'base64' || typeof value.data !== 'string') return value;
+  const binary = atob(value.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+function votfDownloadBackup(record) {
+  votfProgress('export', 0, 2, 'Encoding maps and models');
+  const blob = new Blob([JSON.stringify(record, votfBackupReplacer)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'voice-of-the-forest-backup-' + record.at.slice(0,10) + '.json';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  votfProgress('export', 2, 2, 'Download requested — check your Downloads folder', 'success');
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+document.addEventListener('votf:checkpoint-create', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  try {
+    votfSceneStatus('Saving checkpoint and verifying it…');
+    const saved = await votfSnapshot(e.detail?.name || 'Campaign checkpoint');
+    votfSceneStatus('Checkpoint saved: ' + saved.name);
+  } catch(err) { votfProgress('checkpoint', 0, 1, 'Checkpoint failed: ' + err.message, 'error'); votfSceneStatus('Checkpoint failed: ' + err.message); }
+});
+document.addEventListener('votf:checkpoint-list', () => {
+  if (isHost) votfCheckpointList();
+});
+document.addEventListener('votf:checkpoint-export', async () => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  try {
+    votfSceneStatus('Preparing downloadable backup…');
+    const record = await votfSnapshot('Exported campaign backup', false);
+    votfDownloadBackup(record);
+    votfSceneStatus('Backup download requested. Verify the downloaded JSON file before relying on it.');
+  } catch(err) { votfProgress('export', 0, 1, 'Backup export failed: ' + err.message, 'error'); votfSceneStatus('Backup export failed: ' + err.message); }
+});
+function votfValidateCheckpoint(data) {
+  return !!(data && data.format === 'votf-tabletop-checkpoint' && data.version === 1 &&
+    data.state && Array.isArray(data.state.boards) && data.state.boards.length &&
+    data.state.boardLib && typeof data.state.boardLib === 'object' &&
+    Array.isArray(data.assets) && data.assets.every(entry => Array.isArray(entry) &&
+      entry.length === 2 && typeof entry[0] === 'string' &&
+      /^(map$|map:|boardlib:|model:)/.test(entry[0])));
+}
+async function votfRestoreBackup(data) {
+  if (!votfValidateCheckpoint(data)) {
+    votfSceneStatus('Backup validation failed. Nothing changed.'); return;
+  }
+  if ([...conns.values()].some(x => x.conn?.open)) {
+    votfSceneStatus('Disconnect all players before restoring.'); return;
+  }
+  if (!confirm('Restore "' + data.name + '"? The current campaign will be replaced after a safety checkpoint.')) return;
+  try {
+    votfProgress('restore', 0, 4, 'Creating recovery safety checkpoint');
+    votfSceneStatus('Creating a safety checkpoint before recovery…');
+    const safety = await votfSnapshot('Safety before restoring ' + data.name);
+    votfProgress('restore', 1, 4, 'Safety checkpoint verified');
+    clearTimeout(saveTimer);
+    const existing = await blobs.dump();
+    const desired = new Set(data.assets.map(([k]) => k));
+    votfProgress('restore', 2, 4, 'Restoring image and model data');
+    for (const [k] of existing) {
+      if (!String(k).startsWith(VOTF_CHECKPOINT_PREFIX) && !desired.has(k)) await blobs.set(k,null);
+    }
+    for (const [key,value] of data.assets) await blobs.set(key,value);
+    votfProgress('restore', 3, 4, 'Restoring saved game state');
+    if (!store.set('tabletop.host', { code:data.room || roomCode, state:data.state }))
+      throw Error('Restored game state could not be written. See safety checkpoint ' + safety.id);
+    votfProgress('restore', 4, 4, 'Restore written — reloading game', 'success');
+    location.reload();
+  } catch(err) {
+    votfProgress('restore', 0, 1, 'Restore interrupted: ' + err.message, 'error');
+    votfSceneStatus('Restore interrupted: ' + err.message + '. Safety checkpoint remains available.');
+  }
+}
+document.addEventListener('votf:checkpoint-restore', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = String(e.detail?.id || '');
+  if (!votfCheckpointIndex().some(x => x.id === id)) return;
+  const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
+  await votfRestoreBackup(data);
+});
+document.addEventListener('votf:checkpoint-import', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const file = e.detail?.file;
+  if (!(file instanceof File) || file.size > 250 * 1024 * 1024) {
+    votfSceneStatus('Choose a valid backup JSON file smaller than 250 MB.'); return;
+  }
+  try {
+    votfProgress('import-backup', 0, 2, 'Reading backup file');
+    const data = JSON.parse(await file.text(), votfBackupReviver);
+    votfProgress('import-backup', 2, 2, 'Backup decoded; validating before restore', 'success');
+    await votfRestoreBackup(data);
+  } catch(err) {
+    votfProgress('import-backup', 0, 1, 'Backup import failed: ' + err.message, 'error');
+    votfSceneStatus('Backup import failed: ' + err.message);
+  }
+});
+document.addEventListener('votf:checkpoint-delete', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = String(e.detail?.id || '');
+  const list = votfCheckpointIndex();
+  const cp = list.find(x => x.id === id);
+  if (!cp || !confirm('Permanently delete checkpoint "' + cp.name + '"?')) return;
+  await blobs.set(VOTF_CHECKPOINT_PREFIX + id, null);
+  if (!store.set(VOTF_CHECKPOINT_INDEX, list.filter(x => x.id !== id))) {
+    votfSceneStatus('Could not update the checkpoint index.'); return;
+  }
+  votfCheckpointList();
+  votfSceneStatus('Checkpoint deleted.');
+});
+
+// ---------- Voice of the Forest campaign scene integration (GM only) ----------
+// Reuses the normal board, maps, saved-board and Places systems. The scene
+// browser is an optional additive overlay; no player travel happens here.
+function votfSceneStatus(message) {
+  document.dispatchEvent(new CustomEvent('votf:scene-status', { detail: { message } }));
+}
+document.addEventListener('votf:open-scene', e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = e.detail?.sceneId;
+  if (typeof id !== 'string') return;
+  const entry = Object.entries(state.boardLib || {}).find(([, b]) => b.sceneId === id)
+    || Object.entries(state.boardLib || {}).find(([, b]) => b.name === e.detail?.name);
+  if (!entry) { votfSceneStatus('This scene has no imported image yet. Choose Import original PNG.'); return; }
+  openPlace(entry[0]); // Does not move the party or unlock a chapter.
+  votfSceneStatus('Opened saved scene for the GM. Players remain on their current layer.');
+});
+document.addEventListener('votf:close-scene', e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = e.detail?.sceneId;
+  const b = state.boards.find(b => state.boardLib?.[b.lib]?.sceneId === id);
+  if (!b) { votfSceneStatus('This scene is not currently loaded.'); return; }
+  if (state.boards.length < 2) { votfSceneStatus('The last tabletop board cannot be closed.'); return; }
+  votfCloseScene(b);
+});
+document.addEventListener('votf:import-scene', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) {
+    votfSceneStatus('Only the GM can import campaign scenes.'); return;
+  }
+  const { sceneId, name, cols, rows, file } = e.detail || {};
+  if (typeof sceneId !== 'string' || typeof name !== 'string' ||
+      !Number.isInteger(cols) || !Number.isInteger(rows) ||
+      cols < 2 || cols > 80 || rows < 2 || rows > 80 ||
+      !(file instanceof File) || !file.type.startsWith('image/')) {
+    votfSceneStatus('Invalid scene or image. Nothing was imported.'); return;
+  }
+  if (Object.values(state.boardLib || {}).some(b => b.sceneId === sceneId)) {
+    votfSceneStatus('This scene was already imported. Choose Open saved scene instead.'); return;
+  }
+  // Decode before creating a board, so a bad image leaves no stray layer.
+  votfProgress('map-import', 0, 4, 'Reading original map image');
+  let map;
+  try { map = await readMap(file); }
+  catch { votfSceneStatus('Could not decode this image. No board was created.'); return; }
+  votfProgress('map-import', 1, 4, 'Map decoded; validating dimensions');
+  const expectedRatio = cols / rows, actualRatio = map.w / map.h;
+  if (Math.abs(expectedRatio - actualRatio) > 0.15) {
+    votfSceneStatus('The image shape does not match the scene grid (' + cols + '×' + rows + '). No board was created.');
+    return;
+  }
+  // Validate after async decode too: an import may have been triggered twice.
+  if (Object.values(state.boardLib || {}).some(b => b.sceneId === sceneId)) {
+    votfSceneStatus('Scene already imported. Nothing else was changed.'); return;
+  }
+  const nextLayer = Math.max(1, ...state.boards.map(layerOf)) + 1;
+  if (nextLayer > 20) {
+    votfSceneStatus('All 20 tabletop layers are occupied. No scene was imported.'); return;
+  }
+  votfProgress('map-import', 2, 4, 'Creating private scene board');
+  const newId = handle({ t: 'boardAdd', cols, rows, layer: nextLayer, hidden: false }, clientId);
+  if (!newId) { votfSceneStatus('Could not create the new scene board.'); return; }
+  handle({ t: 'map', id: newId, map: map.data }, clientId);
+  viewLayer(nextLayer);
+  pickBoard(newId);
+  votfProgress('map-import', 3, 4, 'Saving scene in Places');
+  const before = new Set(Object.keys(state.boardLib || {}));
+  handle({ t: 'boardSave', id: newId, name, group: 'Voice of the Forest · Chapter ' + e.detail.chapterId }, clientId);
+  const newLib = Object.keys(state.boardLib || {}).find(k => !before.has(k));
+  if (!newLib) { votfSceneStatus('Board created, but could not save it to Places.'); return; }
+  state.boardLib[newLib].sceneId = sceneId;
+  state.boardLib[newLib].campaignId = 'voice-of-the-forest';
+  state.boardLib[newLib].originalFilename = e.detail.originalFilename || file.name;
+  const board = state.boards.find(b => b.id === newId);
+  if (board) board.lib = newLib;
+  save();
+  renderPlaces();
+  votfProgress('map-import', 4, 4, 'Map imported and saved', 'success');
+  votfSceneStatus('Imported ' + name + ' to GM layer ' + nextLayer + '. Saved in Places. Players were not moved.');
+});
+
 // ---------- rules helpers (host) ----------
 // is this mini standing next to square "i,j" (sides or corners), not on it?
 function nextToCell(f, key) {
@@ -2964,6 +3284,7 @@ function save() {
   if (!isHost) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    votfCaptureLoadedScenes();
     const s = { ...state, players: {}, maps: {} };
     for (const [k, p] of Object.entries(state.players)) s.players[k] = { ...p, online: false };
     store.set('tabletop.host', { code: roomCode, state: s });
@@ -4806,6 +5127,13 @@ const _shareT = new THREE.Vector3();
 // keep the graphics card free for everything else (Adam: a video on his other monitor stalled with the GM and test windows open):
 // at most 60 frames a second, 30 in a window without focus while dice or moves play, 12 while it just sits there
 let lastFrame = 0;
+// Cosmetic jump only: no teleport, airborne immunity, obstacle bypass, or extra movement.
+const miniJumpStarted = new Map();
+function startMiniJump(id) {
+  if (typeof id !== 'string' || miniJumpStarted.has(id)) return;
+  miniJumpStarted.set(id, performance.now());
+  camBusy = performance.now();
+}
 let camBusy = 0, frameDt = 0.016;
 function tick(now) {
   const busy = now - camBusy < 500 || !!dragging;   // the camera turning or a mini being dragged: every refresh, so it glides
@@ -4862,8 +5190,16 @@ function tick(now) {
   for (const g of figMeshes.values()) {
     const t = g.userData.target, off = dragging?.id === g.userData.id ? 0 : share.get(g.userData.id) || 0;
     _shareT.set(t.x + off, t.y, t.z + off);       // side by side across the square's diagonal
+    // Remove last frame's visual lift before interpolating the true position.
+    g.position.y -= g.userData.jumpLift || 0;
     g.position.lerp(_shareT, dragging?.id === g.userData.id ? 1 : 0.25);
     const U = g.userData;
+    const jumped = miniJumpStarted.get(U.id);
+    const elapsed = jumped == null ? -1 : performance.now() - jumped;
+    const lift = elapsed >= 0 && elapsed < 520 ? Math.sin(Math.PI * elapsed / 520) * 0.75 : 0;
+    if (jumped != null && elapsed >= 520) miniJumpStarted.delete(U.id);
+    U.jumpLift = lift;
+    g.position.y += lift;
     if (U.rotWant != null && U.rotNow !== U.rotWant) {   // turning smoothly to the new facing
       const dl = ((U.rotWant - U.rotNow) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
       U.rotNow = Math.abs(dl) < 0.01 ? U.rotWant : U.rotNow + dl * 0.2;
@@ -5064,6 +5400,47 @@ function onUp(e) {
   t.set(pos.x, groundAt(pos.x, pos.z, c.w, c.d), pos.z);
   if (d.moved) act({ t: 'move', id: d.id, x: pos.x, z: pos.z, snap: snapOn(), done: true, free: !!e?.shiftKey });
 }
+
+// Keyboard movement uses the normal authoritative movement action.
+// One key press = one grid square; holding repeats at a safe rate.
+// Space triggers a synchronized cosmetic jump, not a tactical jump ability.
+let keyboardStepAt = 0;
+function keyboardMini() {
+  const chosen = selectedId && state.figures[selectedId];
+  if (chosen && canMove(chosen)) return chosen;
+  if (!isHost) {
+    const mine = myMini();
+    if (mine) { select(mine.id); return mine; }
+  }
+  return null;
+}
+addEventListener('keydown', e => {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || preview ||
+      e.target?.isContentEditable || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target?.tagName) ||
+      $('game').style.display !== 'block' || painting || moveBoards || dragging || attackFor || attachFor || itemFor) return;
+  const key = e.key.toLowerCase();
+  const directions = {
+    arrowup:[0,-1], w:[0,-1], arrowdown:[0,1], s:[0,1],
+    arrowleft:[-1,0], a:[-1,0], arrowright:[1,0], d:[1,0]
+  };
+  const move = directions[key];
+  if (!move && e.code !== 'Space') return;
+  const f = keyboardMini();
+  if (!f) return;
+  e.preventDefault(); // Prevent page scrolling for arrows and Space.
+  if (e.code === 'Space') {
+    if (!e.repeat) act({ t:'jump', id:f.id });
+    return;
+  }
+  const now = performance.now();
+  if (now - keyboardStepAt < 120) return;
+  keyboardStepAt = now;
+  const [dx,dz] = move;
+  const {w,d} = fp(f);
+  // Preserve square-centering for different mini sizes.
+  const x = gridSnap(f.x + dx, w), z = gridSnap(f.z + dz, d);
+  act({ t:'move', id:f.id, x, z, snap:true, done:true });
+}, { capture:true });
 
 // =====================================================================
 // Side panel
@@ -5924,10 +6301,10 @@ function wirePanel() {
     status(n ? `Click a square to move ${f.name}: ${n} square${n === 1 ? '' : 's'} left this turn.` : `${f.name} has no movement left this turn.`);
     setTimeout(() => status(''), 4000);
   };
-  addEventListener('keydown', e => {            // the bar's buttons from the keyboard: A attack, D dash, Q actions, B bag, E end turn
+  addEventListener('keydown', e => {            // Q actions, B bag, E end turn; WASD now belongs to movement
     if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
     if ($('actBar').style.display === 'none') return;
-    const b = $({ m: 'actMove', a: 'actAttack', d: 'actDash', q: 'actMore', b: 'actBag', e: 'actEnd' }[e.key.toLowerCase()]);
+    const b = $({ m: 'actMove', q: 'actMore', b: 'actBag', e: 'actEnd' }[e.key.toLowerCase()]);
     if (b && !b.disabled) { e.preventDefault(); b.click(); }
   });
   $('actBag').onclick = () => { const b = $('bagPanel'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; $('actPanel').style.display = 'none'; renderBag(); };
