@@ -315,7 +315,10 @@ function combatView() {
   const c = state.combat;
   if (!c) return null;
   const order = c.order.filter(o => state.figures[o.id] && figVisible(state.figures[o.id]));
-  return { ...c, order, turn: order.findIndex(o => o.id === c.order[c.turn]?.id) };
+  // Internal scheduling arrays contain IDs of undiscovered enemies. They are
+  // needed only by the host and must never be serialized to player browsers.
+  const { went, owed, ...publicCombat } = c;
+  return { ...publicCombat, order, turn: order.findIndex(o => o.id === c.order[c.turn]?.id) };
 }
 // tiles to players, leaving out squares on hidden boards
 function sendTiles(set, clear) {
