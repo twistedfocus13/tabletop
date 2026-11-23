@@ -1,0 +1,995 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabletop</title>
+<style>
+  :root {
+    --bg: #15171c; --panel: #1f232b; --panel2: #272c36; --line: #363c48;
+    --text: #e8e9ed; --dim: #9aa0ad; --accent: #e0a64b; --danger: #d9534f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  button, input, select { font: inherit; color: inherit; }
+  button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #1a1407; border-color: var(--accent); font-weight: 600; }
+  .btnlike { display: inline-block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text); font-size: 14px; }
+  .btnlike:hover { border-color: var(--accent); }
+  button.danger { border-color: var(--danger); color: #ffb3b0; }
+  input, select { background: #12141a; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+  input[type=color] { padding: 0 2px; height: 32px; width: 44px; }
+  label { color: var(--dim); font-size: 12px; display: block; margin: 6px 0 2px; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > * { flex: 1; }
+  .row > .fit { flex: 0 0 auto; }
+
+  /* lobby */
+  #lobby { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 10; background: var(--bg); }
+  #lobby .card { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  #lobby h1 { margin: 0 0 4px; font-size: 22px; }
+  #lobby p { margin: 0 0 12px; color: var(--dim); }
+  #lobby .or { text-align: center; color: var(--dim); margin: 12px 0; font-size: 12px; }
+  #lobbyMsg { color: #ffb3b0; min-height: 1.4em; margin-top: 8px; }
+
+  /* game */
+  #game { position: fixed; inset: 0; display: none; }
+  #view { position: absolute; inset: 0; right: 300px; }
+  #view canvas { display: block; touch-action: none; }
+  #side { position: absolute; top: 0; right: 0; bottom: 0; width: 300px; background: var(--panel);
+    border-left: 1px solid var(--line); overflow-y: auto; padding: 10px 12px 16px; }
+  #side section { border-bottom: 1px solid var(--line); padding: 8px 0 12px; }
+  #side section:last-child { border-bottom: 0; }
+  #side h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+  .gm-only { display: none; }
+  body.gm .gm-only { display: block; }
+  body.gm .row.gm-only { display: flex; }
+  #roomLine { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  #roomCode { font-weight: 700; letter-spacing: .12em; font-size: 16px; }
+  #players div { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+  #dice { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  #log { height: 160px; overflow-y: auto; background: #12141a; border: 1px solid var(--line); border-radius: 6px; padding: 6px; font-size: 13px; }
+  #log div { margin-bottom: 3px; word-wrap: break-word; }
+  #log .roll { color: var(--accent); }
+  #log .sys { color: var(--dim); font-style: italic; }
+  @media (max-width: 700px) { #hint { right: 70px; font-size: 11px; } }
+  #actPanel { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(460px, calc(100% - 32px)); max-height: 55vh; overflow: auto; }
+  @media (min-width: 701px) { #actPanel { left: calc(50% - 150px); } }
+  #actList { display: block; }
+  #actList .actGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  #actList .actCard { display: flex; align-items: center; gap: 8px; text-align: left; padding: 6px 8px 6px 10px; min-width: 0; border-radius: 10px; }
+  #actList .actCard .an { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #actList .actCard b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #actList .actCard b { white-space: normal; }
+  #actList .actCard small { font-size: 11px; color: #ffd9a0; }
+  #actList .actCard i { font-size: 11px; font-style: normal; color: #c9c0a8; line-height: 1.25; margin-top: 2px; }
+  #actList .actCard { align-items: flex-start; }
+  #actList .actCard .ad { margin-top: 2px; }
+  #actList .actCard .ad { flex: none; font-weight: 700; font-size: 15px; background: #0006; border-radius: 8px; padding: 3px 7px; color: #ffd76a; }
+  @media (max-width: 420px) { #actList .actGrid { grid-template-columns: 1fr; } }
+  .actGroup { width: 100%; color: var(--accent); font-size: 12px; font-weight: 700; margin-top: 6px; text-transform: uppercase; }
+  #bagPanel { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(600px, calc(100% - 32px)); max-height: 62vh; overflow: auto; }
+  #bagShade { position: absolute; inset: 0; z-index: 5; background: #0003; }
+  /* item cards (Adam: playable cards) */
+  .icfly { position: fixed; z-index: 30; pointer-events: none; margin: 0; transition: left .35s ease, top .35s ease, transform .35s ease, opacity .5s ease;
+    box-shadow: 0 0 0 3px #fff, 0 0 40px #ffd76a, 0 14px 30px #000c; }
+  .icstamp { position: absolute; left: 50%; top: 64%; transform: translate(-50%, -50%) rotate(-14deg); padding: 3px 10px; border: 3px solid #6fe08a; border-radius: 8px;
+    color: #6fe08a; background: #0b1a10d9; font: 700 20px var(--pix); letter-spacing: 1px; white-space: nowrap; animation: stampIn .3s ease-out .15s both; }
+  .icstamp.aim { border-color: #ffd76a; color: #ffd76a; background: #1d1606d9; font-size: 13px; }
+  @keyframes stampIn { from { transform: translate(-50%, -50%) rotate(-14deg) scale(2.6); opacity: 0; } }
+  .ihand { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 6px; }
+  .icard { --kc: #5a6b8c; position: relative; display: flex; flex-direction: column; min-height: 196px; padding: 6px 8px 7px; border-radius: 12px; cursor: pointer;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--kc) 45%, #1a1d2e) 0%, #171a28 70%); border: 2px solid var(--kc);
+    box-shadow: 0 3px 0 #0008, inset 0 1px 0 #fff3; transition: transform .12s, box-shadow .12s; outline: none; }
+  .icard:hover, .icard:focus-visible { transform: translateY(-5px) rotate(-1deg); box-shadow: 0 9px 16px #000a, 0 0 0 2px #fff8, inset 0 1px 0 #fff3; }
+  .icard.off { cursor: default; filter: saturate(.55) brightness(.8); }
+  .icard.off:hover { transform: none; box-shadow: 0 3px 0 #0008; }
+  .k-berry { --kc: #3f9a4e; } .k-seed { --kc: #a0743c; } .k-orb { --kc: #8a4fd0; } .k-throw { --kc: #8d939e; } .k-food { --kc: #d0702c; } .k-gear { --kc: #d4ad3a; }
+  .ictop { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #fffc; }
+  .ictop b { background: #000a; color: #ffd76a; border-radius: 8px; padding: 0 6px; font-size: 12px; letter-spacing: 0; }
+  .icart { font-size: 34px; text-align: center; line-height: 1.25; margin: 2px 0; filter: drop-shadow(0 2px 2px #0009); }
+  .icname { font-weight: 700; font-size: 14px; text-align: center; color: #fff; line-height: 1.15; margin-bottom: 4px; }
+  .icfx { flex: 1; font-size: 11px; line-height: 1.3; color: #d8dcf0; background: #0005; border-radius: 6px; padding: 4px 6px; }
+  .icfoot { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 5px; font-size: 10.5px; color: #fffd; }
+  .icfoot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icfoot i { font-style: normal; font-weight: 700; border-radius: 6px; padding: 0 5px; background: #0007; flex: none; }
+  .t-Mundane { color: #bbb; } .t-Common { color: #e8e8e8; } .t-Uncommon { color: #6fe08a; } .t-Rare { color: #6fb6ff; } .t-VeryRare { color: #d38cff; }
+  .icout { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 700; line-height: 1; display: none; }
+  .icard:hover .icout, .icard:focus-within .icout { display: block; }
+  @media (hover: none) { .icout { display: block; } }
+  @media (min-width: 701px) { #bagPanel { left: calc(50% - 150px); } }
+  #actBar { position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); gap: 8px; z-index: 4; background: #000a; padding: 8px; border-radius: 12px; }
+  #actBar button { font-size: 16px; padding: 10px 14px; min-width: 88px; }
+  @media (max-width: 700px) { #actBar button { font-size: 14px; padding: 8px 8px; min-width: 0; } }
+  @media (min-width: 701px) { #actBar { left: calc(50% - 150px); } }
+  .bagRow { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .bagRow span { flex: 1; }
+  .bagHead { margin-top: 10px; color: var(--accent); font-size: 13px; border-top: 1px solid #ffffff22; padding-top: 6px; }
+  #floorTag { position: absolute; left: 50%; transform: translateX(-50%); top: 10px; z-index: 3; background: #000a; padding: 4px 12px; border-radius: 6px; font-weight: 700; letter-spacing: .5px; color: #ffd27a; pointer-events: none; }
+  @media (min-width: 701px) { #floorTag { left: calc(50% - 150px); } }
+  @media (max-width: 700px) { #floorTag { top: 44px; } }
+  #floorBanner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none;
+    font-size: 40px; font-weight: 800; color: #fff; text-shadow: 0 3px 12px #000; background: #000c; opacity: 0; z-index: 6; }
+  #floorBanner .fl { font-size: 64px; color: #ffd27a; }
+  #floorBanner.show { animation: floorIn 3.2s ease forwards; }
+  /* the end of a dungeon run: Dungeon Complete / Escaped / whited out (the screen fades to black first) */
+  #endScreen { position: absolute; inset: 0; z-index: 12; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    font-family: var(--pix); color: #fff; text-align: center; padding: 16px; }
+  #endScreen.show { display: flex; animation: endIn 1.2s ease forwards; }
+  #endScreen.complete { background: radial-gradient(#1b2340ee, #0b1020f5); }
+  #endScreen.escaped { background: radial-gradient(#1b3340ee, #0b1a20f5); }
+  #endScreen.whiteout { background: #000; animation: endFade 3s ease forwards; }
+  #endScreen .et { font-size: 56px; font-weight: 700; text-shadow: 0 4px 0 #000; }
+  #endScreen.complete .et { color: #ffd27a; } #endScreen.escaped .et { color: #7fd8ff; } #endScreen.whiteout .et { color: #e8e8e8; }
+  #endScreen .es { font-size: 20px; color: #cfd8ff; max-width: 520px; }
+  #endScreen.whiteout .et, #endScreen.whiteout .es, #endScreen.whiteout button { opacity: 0; animation: endText 1s ease 2s forwards; }
+  #endScreen button { margin-top: 12px; font: 700 18px var(--pix); }
+  @media (max-width: 700px) { #endScreen .et { font-size: 38px; } #endScreen .es { font-size: 16px; } }
+  @keyframes endIn { 0% { opacity: 0 } 100% { opacity: 1 } }
+  @keyframes endFade { 0% { opacity: 0 } 60% { opacity: 1 } 100% { opacity: 1 } }
+  @keyframes endText { 0% { opacity: 0 } 100% { opacity: 1 } }
+  @keyframes floorIn { 0% { opacity: 0; } 12% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+  #hint { position: absolute; left: 10px; bottom: 10px; color: var(--dim); font-size: 12px; background: #0009; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+  #status { position: absolute; left: 10px; top: 10px; background: #000a; padding: 4px 10px; border-radius: 6px; font-size: 13px; display: none; }
+  .evwait .evbtns { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .evwait .evbtns button { font-size: 12px; padding: 4px 8px; }
+  .evwait { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; padding: 6px 8px;
+    background: #3a2f0a; border: 1px solid #ffd23f; border-radius: 8px; }
+  .evcard { margin-top: 8px; padding: 8px; background: #1a2230; border: 1px solid #4b9be0; border-radius: 8px; }
+  .evcard .evt { font-weight: 700; color: #ffd27a; margin-bottom: 4px; }
+  .evcard .evx { font-size: 12px; color: var(--text); line-height: 1.45; }
+  .evcard .evb { flex-wrap: wrap; margin-top: 6px; }
+  .evcard .evb > * { flex: 0 0 auto; font-size: 12px; padding: 4px 8px; }
+  /* sections that open and close by clicking their title */
+  section.fold > h3 { cursor: pointer; user-select: none; }
+  section.fold > h3::before { content: '▸ '; color: var(--dim); }
+  section.fold.open > h3::before { content: '▾ '; }
+  section.fold:not(.open) > .foldBody { display: none; }
+  /* the GM's panel is split into tabs: only the picked tab's sections show (players see everything) */
+  #gmTabs { display: none; gap: 4px; flex-wrap: wrap; margin-top: 10px; }
+  body.gm:not(.previewing) #gmTabs { display: flex; }
+  #gmTabs button { flex: 1 1 auto; padding: 6px 4px; font-size: 12px; }
+  #side { overflow-x: hidden; }
+  /* the Floors tab's rows of number boxes fit the panel's width */
+  #floorSec .row > div { flex: 1 1 0; min-width: 0; }
+  #floorSec .row input, #floorSec .row select { width: 100%; min-width: 0; box-sizing: border-box; }
+  #gmTabs button.on { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 700; }
+  body.gm:not(.previewing) section[data-tab]:not(.tabOn) { display: none !important; }
+  /* while searching the settings, the matching sections show from every tab (the log stays) */
+  body.gm.searching:not(.previewing) #side > section[data-tab]:not(#logSec):not(.hit) { display: none !important; }
+  body.gm.searching:not(.previewing) #side > section[data-tab].hit { display: block !important; }
+  body.gm.searching:not(.previewing) #side > section.hit.fold > .foldBody { display: block; }
+  body.gm.searching:not(.previewing) #gmTabs button.on { background: none; color: inherit; border-color: var(--line); }
+  /* in the GM's Combat tab, players, dice and log sit on top (under the room box) */
+  body.gm:not(.previewing) #side { display: flex; flex-direction: column; }
+  body.gm:not(.previewing) #side > section { flex-shrink: 0; }
+  body.gm:not(.previewing) #side > section:first-of-type { order: -2; }
+  body.gm:not(.previewing) #side > #gmTabs { order: -3; }
+  body.gm:not(.previewing) #side > section.tblSec { order: -1; }
+  /* the GM's log is on every tab, stuck to the bottom of the side panel so it never scrolls away (Adam) */
+  /* the GM's log floats over the board, bottom right, and can be dragged anywhere by its title (Adam) */
+  body.gm:not(.previewing) #side > #logSec { position: fixed; right: 312px; bottom: 10px; width: 340px; z-index: 5; display: block !important;
+    background: var(--panel); border: 2px solid var(--accent); border-radius: 12px; padding: 6px 10px 8px; box-shadow: 0 6px 20px #000c; }
+  body.gm:not(.previewing) #side > #logSec h3 { margin: 0 0 4px; cursor: move; user-select: none; touch-action: none; }
+  body.gm:not(.previewing) #side > #logSec h3::after { content: ' ⠿ drag'; color: var(--dim); font-size: 10px; letter-spacing: 0; text-transform: none; }
+  body.gm:not(.previewing) #logSec #log { height: 150px; }
+  #logMin { display: none; float: right; width: 22px; height: 20px; padding: 0; line-height: 1; font-size: 13px; }
+  body.gm:not(.previewing) #logMin { display: block; }
+  /* minimized: just the title bar (Adam) */
+  body.gm.logMin:not(.previewing) #logSec > :not(h3) { display: none !important; }
+  body.gm.logMin:not(.previewing) #side > #logSec { width: 170px; padding-bottom: 4px; }
+  body.gm.logMin:not(.previewing) #side > #logSec h3 { margin: 0; }
+  @media (max-width: 700px) { body.gm:not(.previewing) #side > #logSec { position: static; width: auto; border: 0; box-shadow: none; } }
+  /* the GM's button bar: bottom left, dragged by its grip (Adam) */
+  #barGrip { display: none; cursor: move; touch-action: none; user-select: none; color: #cfd8ff; font-size: 18px; padding: 0 4px; align-self: center; }
+  body.gmBar #barGrip { display: block; }
+  body.gmBar #actBar { left: 64px !important; bottom: 10px; transform: none; width: max-content; }
+  body.gm:not(.previewing) section.fold > .foldBody { display: block; }
+  body.gm:not(.previewing) section.fold > h3 { cursor: default; }
+  body.gm:not(.previewing) section.fold > h3::before { content: ''; }
+  .foldNow { color: var(--dim); text-transform: none; letter-spacing: 0; font-weight: 400; float: right; }
+  #tileTypes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  #boardList { display: flex; flex-wrap: wrap; gap: 4px; }
+  #boardList button { font-size: 12px; padding: 4px 8px; }
+  #boardList button.on, #moveBoards.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  button:disabled { opacity: .4; cursor: default; }
+  .stats { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 4px; }
+  .stats input { width: 100%; }
+  .areaRow { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; }
+  .areaRow span:nth-child(2) { flex: 1; }
+  #stChips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 12px; background: #3a2f1a; border-color: #7a5a20; }
+  #atkOwn .chip { font-size: 13px; padding: 4px 10px; border-width: 2px; }
+  #atkOwn .chip.on { background: #6b5320; color: #fff; }
+  #turnList .turn { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+  #turnList .turn .nm { flex: 1; }
+  #turnList .turn .ini { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #turnList .turn.now { background: #3a3220; outline: 1px solid var(--accent); }
+  /* ===== Voice of the Forest / Mystery Dungeon look (Adam 10-28): warm wood panels, pixel font, navy PMD windows on the board ===== */
+  @font-face { font-family: 'PixelOp'; src: url('fonts/PixelOperator.ttf') format('truetype'); font-display: swap; }
+  @font-face { font-family: 'PixelOp'; src: url('fonts/PixelOperator-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+  :root {
+    --bg: #24170b; --panel: #3a2618; --panel2: #4a2f17; --line: #6b4423;
+    --text: #f7eed6; --dim: #c9a66b; --accent: #f2c14e; --orange: #e07b1f; --danger: #d8412f;
+    --navy: #1b2340; --navy2: #283463; --pix: 'PixelOp', ui-monospace, monospace;
+  }
+  html, body { background: var(--bg); }
+  input, select { background: #24170b; }
+  #side h3, #lobby h1, #gmTabs button, #actBar button, #floorTag, #floorBanner, #hud, #turnBox, #msgBox, .prompt, #status { font-family: var(--pix); }
+  #side h3 { font-size: 15px; letter-spacing: .04em; color: var(--accent); }
+  button.primary { background: var(--orange); border-color: #b85f12; color: #fffaf0; box-shadow: 0 2px 0 #8a4a10; }
+  button.primary:active { transform: translateY(1px); box-shadow: none; }
+  #gmTabs button.on { background: var(--orange); color: #fffaf0; border-color: #b85f12; }
+  #log { background: #24170b; }
+  /* the PMD window: navy, a light inner frame, a dark outer edge */
+  .pmd, #actBar, #floorTag, #status, #hud, #turnBox, #msgBox, #actPanel, #bagPanel, #atkPanel, .prompt {
+    background: linear-gradient(180deg, var(--navy2), var(--navy)) !important; color: #fff;
+    border: 2px solid #dfe6ff; border-radius: 10px; box-shadow: 0 0 0 2px #0b1020, inset 0 0 0 2px #3b4a8a, 0 6px 16px #000a;
+  }
+  #actBar button { background: #2f3d78; border-color: #6f82d0; color: #fff; font-size: 18px; }
+  #actBar button:hover:not(:disabled) { border-color: var(--accent); }
+  #actBar button.primary { background: var(--orange); border-color: #ffd28a; }
+  #actBar button[data-key]::after { content: attr(data-key); font: 700 12px var(--pix); color: var(--accent); margin-left: 6px; opacity: .8; vertical-align: super; }
+  @media (hover: none) { #actBar button[data-key]::after { content: none; } }
+  #actBar button i { font-style: normal; }
+  /* phones: five even buttons, icon on top, word centred under it */
+  @media (max-width: 700px) {
+    #actBar { width: calc(100% - 16px); max-width: 440px; gap: 5px; padding: 6px; }
+    #actBar button { flex: 1 1 0; min-width: 0; padding: 6px 2px; font-size: 14px; line-height: 1.15;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    #actBar button i { font-size: 18px; }
+    #actBar button span { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    #actBar button[data-key]::after { content: none; }
+    body:not(.gm) #floorTag { left: 10px; transform: none; top: 100px; font-size: 14px; }
+  }
+  @media (hover: none) { #hint { display: none; } }
+  #floorTag { color: var(--accent); font-size: 18px; padding: 4px 14px; }
+  #floorBanner { font-family: var(--pix); background: radial-gradient(#000c, #000e); }
+  #floorBanner .fl { color: var(--accent); }
+  /* the player's mini at the top left, like the dungeon HUD */
+  #hud { position: absolute; left: 10px; top: 10px; z-index: 4; padding: 6px 12px 8px 6px; min-width: 190px; pointer-events: none; display: none; gap: 8px; align-items: flex-start; }
+  #hudPic { width: 52px; height: 52px; border-radius: 8px; border: 3px solid #3d7be0; background: #0b1020; object-fit: cover; flex: none; box-sizing: border-box; }
+  #hud .hb { flex: 1; min-width: 0; }
+  /* the rest of the team, under your own tile (blue border: party member, green: temporary ally) */
+  #teamTiles { position: absolute; left: 10px; top: 10px; z-index: 4; display: none; flex-direction: column; gap: 6px; pointer-events: none; font-family: var(--pix); }
+  #teamTiles .tt { display: flex; gap: 6px; align-items: center; padding: 4px 8px 5px 4px; min-width: 170px; max-width: 220px; pointer-events: auto; }
+  #teamTiles .tt .pic { width: 38px; height: 38px; border-radius: 6px; border: 3px solid var(--bc); background: #0b1020; object-fit: cover; flex: none; box-sizing: border-box; display: block; }
+  #teamTiles .tt.party { --bc: #3d7be0; } #teamTiles .tt.ally { --bc: #3fbf4f; }
+  #teamTiles .tt .ti { flex: 1; min-width: 0; }
+  #teamTiles .tt .tn { font-size: 13px; font-weight: 700; display: flex; justify-content: space-between; gap: 6px; white-space: nowrap; }
+  #teamTiles .tt .tn span { overflow: hidden; text-overflow: ellipsis; }
+  #teamTiles .tt .tn small { color: var(--accent); font-size: 11px; flex: none; }
+  #teamTiles .tt .hpb { height: 6px; background: #0b1020; border: 1px solid #6f82d0; border-radius: 4px; margin-top: 3px; overflow: hidden; }
+  #teamTiles .tt .hpb i { display: block; height: 100%; }
+  #teamTiles .tt .ts { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; }
+  #teamTiles .tt .ts span { font-size: 9px; padding: 0 4px; border-radius: 6px; cursor: help; }
+  #teamTiles .tt em { font-style: normal; font-size: 9px; padding: 0 5px; border-radius: 6px; background: #2e7d32; color: #fff; }
+  #teamTiles .tt em.go { background: #ffd76a; color: #1a1a1a; }
+  #teamTiles .tt.turn { box-shadow: 0 0 0 2px #ffd76a, 0 0 12px #ffd76a88; }
+  #teamTiles .tt.done { opacity: .8; } #teamTiles .tt.out { filter: grayscale(.85); opacity: .7; }
+  #teamTiles .more { font-size: 12px; color: #cfd8ff; padding-left: 4px; }
+  @media (max-width: 700px) { #teamTiles { display: none !important; } #hudPic { width: 40px; height: 40px; } }
+  #hud .hn { font-size: 18px; font-weight: 700; display: flex; justify-content: space-between; gap: 10px; }
+  #hud .hn small { color: var(--accent); font-size: 14px; }
+  #hud .hpb { height: 9px; background: #0b1020; border: 1px solid #6f82d0; border-radius: 5px; margin-top: 4px; overflow: hidden; }
+  #hud .hpb i { display: block; height: 100%; background: #3fbf4f; transition: width .3s; }
+  /* turn order at the top right, same window as the HUD */
+  /* Controls (Adam): a button at the top right for everyone, opening a list of every control */
+  #ctrlBtn { position: absolute; top: 10px; right: 310px; z-index: 3; font-size: 14px; line-height: 1; padding: 8px 11px; }
+  #ctrlShade { position: absolute; inset: 0; z-index: 9; background: #0006; }
+  #ctrlPanel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(520px, calc(100% - 32px)); max-height: 80%; overflow: auto; margin: 0; }
+  #ctrlX { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border-radius: 50%; font-weight: 700; }
+  #ctrlList h4 { margin: 10px 0 4px; color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  #ctrlList .cr { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #ffffff14; font-size: 13px; }
+  #ctrlList .cr b { flex: none; min-width: 150px; color: #fff; }
+  #ctrlList kbd { display: inline-block; min-width: 18px; padding: 1px 6px; border: 1px solid #fff6; border-bottom-width: 2px; border-radius: 4px; background: #0006; font: 700 12px var(--pix); text-align: center; }
+  body.gm:not(.previewing) #turnBox { right: 440px; }
+  #turnBox { position: absolute; right: 310px; top: 10px; z-index: 4; padding: 6px 10px 8px; width: 215px; pointer-events: none; display: none; }
+  #turnBox .tt { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 3px; }
+  #turnBox .tt { pointer-events: auto; cursor: pointer; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #turnBox .tt:last-child { margin-bottom: 0; }
+  #turnBox .row { display: flex; align-items: center; gap: 6px; font-size: 15px; line-height: 1.35; color: #cfd8ff; }
+  #turnBox .row i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  #turnBox .row span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #turnBox .row small { font-size: 13px; opacity: .7; }
+  #turnBox .row.now { color: var(--accent); font-weight: 700; background: #ffffff1f; border-radius: 4px; margin: 0 -4px; padding: 0 4px; }
+  #turnBox .row.out { opacity: .45; text-decoration: line-through; }
+  #turnBox .row.lurk { opacity: .5; }
+  #turnBox .more { font-size: 13px; color: #cfd8ff; opacity: .7; }
+  body.previewing #turnBox { right: 310px; }
+  @media (max-width: 700px) { #turnBox, body.previewing #turnBox { right: 10px; top: 48px; width: 170px; } #turnBox .row { font-size: 13px; } }
+  #hud .ht { font-size: 14px; color: #cfd8ff; margin-top: 3px; }
+  /* player friendly (Adam): action ready/used, status chips, low HP, your-turn glow and banner */
+  #hudAct { font-size: 12px; margin-top: 3px; color: #8fe39b; }
+  #hudAct.used { color: #9aa3c4; }
+  #hudSt { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; pointer-events: auto; }
+  #hudSt span { font-size: 11px; padding: 0 6px; border-radius: 8px; background: #6b2f9a; color: #fff; cursor: help; }   /* each status gets its own colour from statusLook() */
+  #hud.low .hpb { animation: lowHp 1s ease-in-out infinite; }
+  @keyframes lowHp { 50% { box-shadow: 0 0 0 2px #d8412f, 0 0 10px #d8412f; } }
+  #hud.myturn { box-shadow: 0 0 0 2px #ffd76a, 0 0 16px #ffd76a88; }
+  #hud.out { filter: grayscale(.8); }
+  /* turn order strip across the top of the table (Adam: 'much more visible'): whoever's turn it is big, the next ones after it */
+  #turnStrip { position: absolute; left: calc(50% - 150px); top: 50px; transform: translateX(-50%); z-index: 5; display: none; padding: 4px 8px 8px; font-family: var(--pix); max-width: calc(100% - 420px); }
+  #tsHead { display: flex; align-items: center; gap: 8px; cursor: move; user-select: none; touch-action: none; margin-bottom: 4px; }
+  #tsTitle { flex: 1; font-size: 15px; font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tsMin { width: 22px; height: 20px; padding: 0; line-height: 1; font-size: 13px; flex: none; }
+  #tsBody { display: flex; align-items: flex-end; justify-content: center; flex-wrap: wrap; gap: 8px; }
+  body.turnMin #tsBody { display: none; } body.turnMin #tsHead { margin-bottom: 0; }
+  body.sideHidden:is(:not(.gm), .previewing) #turnStrip { left: 50%; max-width: calc(100% - 420px); }
+  #turnStrip .tc { display: flex; flex-direction: column; align-items: center; background: #14204ee6; border: 2px solid #5b6fc0; border-radius: 10px; padding: 4px 8px 5px; min-width: 64px; max-width: 110px; color: #cfd8ff; box-shadow: 0 3px 0 #0008; }
+  #turnStrip .tc img, #turnStrip .tc b { width: 40px; height: 40px; border-radius: 50%; background: #0006; object-fit: cover; display: block; border: 2px solid var(--sc, #888); box-sizing: border-box; }
+  #turnStrip .tc span { font-size: 13px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  #turnStrip .tc small { font-size: 11px; opacity: .75; }
+  #turnStrip .tc.now { min-width: 110px; max-width: 170px; border-color: #ffd76a; background: #2a2f6ef2; color: #ffd76a; animation: stripNow 1.6s ease-in-out infinite; }
+  #turnStrip .tc.now img, #turnStrip .tc.now b { width: 64px; height: 64px; }
+  #turnStrip .tc.now span { font-size: 18px; font-weight: 700; }
+  #turnStrip .tc.now small { color: #fff; opacity: 1; font-size: 12px; letter-spacing: 1px; }
+  #turnStrip .tc.out { opacity: .45; filter: grayscale(1); }
+  #turnStrip .tc.lurk { opacity: .5; }
+  #turnStrip .tc.go { border-color: #ffd76a; color: #ffe9a8; }
+  #turnStrip .tc.done { opacity: .55; } #turnStrip .tc.done small { color: #8fe08f; }
+  #turnStrip .tc.rnd { min-width: 0; padding: 6px 8px; align-self: center; } #turnStrip .tc.rnd span { font-size: 22px; color: #ffd76a; margin: 0; }
+  #turnStrip .arrow { color: #ffd76a; font-size: 18px; align-self: center; text-shadow: 0 2px 0 #000; }
+  #turnStrip.pop .tc.now { animation: stripPop .5s ease, stripNow 1.6s ease-in-out .5s infinite; }
+  @keyframes stripNow { 50% { box-shadow: 0 3px 0 #0008, 0 0 18px #ffd76acc; } }
+  @keyframes stripPop { 0% { transform: scale(.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+  @media (max-width: 700px) { #turnStrip, body.sideHidden:is(:not(.gm), .previewing) #turnStrip { left: 50%; top: 92px; max-width: calc(100% - 20px); } #tsBody { gap: 4px; }
+    #turnStrip .tc { min-width: 46px; padding: 3px 4px; } #turnStrip .tc img, #turnStrip .tc b { width: 28px; height: 28px; } #turnStrip .tc span { font-size: 11px; }
+    #turnStrip .tc.now { min-width: 76px; } #turnStrip .tc.now img, #turnStrip .tc.now b { width: 42px; height: 42px; } #turnStrip .tc.now span { font-size: 14px; } }
+  #yourTurn { position: absolute; left: 50%; top: 22%; transform: translate(-50%, -50%); z-index: 7; pointer-events: none; display: none;
+    font: 700 44px var(--pix); color: #ffd76a; text-shadow: 0 4px 0 #000, 0 0 24px #ffb000; white-space: nowrap; }
+  #yourTurn.show { display: block; animation: yourTurn 1.8s ease forwards; }
+  @keyframes yourTurn { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+    25% { transform: translate(-50%, -50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -70%); } }
+  @media (min-width: 701px) { #yourTurn { left: calc(50% - 150px); } body.sideHidden:not(.gm) #yourTurn { left: 50%; } }
+  @media (max-width: 700px) { #yourTurn { font-size: 30px; } }
+  #status { top: auto; bottom: 120px; left: 50%; transform: translateX(-50%); font-size: 16px; padding: 6px 14px; z-index: 7; }
+  @media (min-width: 701px) { #status { left: calc(50% - 150px); } }
+  /* newest log lines over the board, like the dungeon's message box */
+  /* attack banner: attacker vs target, blue for players, red for enemies */
+  #vsBox { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(560px, calc(100% - 20px));
+    display: none; align-items: center; justify-content: center; gap: 6px; pointer-events: none; font-family: var(--pix); }
+  #vsBox.show { display: flex; }
+  /* "It's super effective!" and friends, over the board when the damage lands */
+  #effPop { position: absolute; top: 38%; left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none; display: none;
+    font: 700 34px var(--pix); letter-spacing: .02em; white-space: nowrap; text-shadow: 0 3px 0 #000, 0 0 12px #000c; }
+  @media (min-width: 701px) { #effPop { left: calc(50% - 150px); } }
+  @media (max-width: 700px) { #effPop { font-size: 26px; } }
+  #effPop.show { display: block; animation: effIn 2.2s ease forwards; }
+  @keyframes effIn { 0% { transform: translateX(-50%) scale(.4); opacity: 0 } 12% { transform: translateX(-50%) scale(1.15); opacity: 1 }
+    20%, 80% { transform: translateX(-50%) scale(1); opacity: 1 } 100% { transform: translateX(-50%) translateY(-20px); opacity: 0 } }
+  #vsBox .ban { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border: 2px solid #fff; border-radius: 10px; color: #fff;
+    box-shadow: 0 3px 10px #0008; }
+  #vsBox .ban.r { flex-direction: row-reverse; text-align: right; }
+  #vsBox .ban img { width: 72px; height: 72px; flex: none; border-radius: 8px; background: #0003; }
+  #vsBox .ban b { display: block; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #vsBox .ban span { font-size: 14px; opacity: .85; }
+  #vsBox .vs { font-size: 26px; color: #ffd27a; text-shadow: 0 2px 0 #000; flex: none; }
+  #vsBox.show .l { animation: vsL 2.6s ease forwards; } #vsBox.show .r { animation: vsR 2.6s ease forwards; } #vsBox.show .vs { animation: vsM 2.6s ease forwards; }
+  @keyframes vsL { 0% { transform: translateX(-60px); opacity: 0 } 12%, 85% { transform: none; opacity: 1 } 100% { opacity: 0 } }
+  @keyframes vsR { 0% { transform: translateX(60px); opacity: 0 } 12%, 85% { transform: none; opacity: 1 } 100% { opacity: 0 } }
+  @keyframes vsM { 0%, 8% { transform: scale(2.5); opacity: 0 } 18%, 85% { transform: none; opacity: 1 } 100% { opacity: 0 } }
+  @media (max-width: 700px) { #vsBox { top: 140px; } #vsBox .ban img { width: 52px; height: 52px; } #vsBox .ban b { font-size: 16px; } #vsBox .ban span { font-size: 12px; } #vsBox .vs { font-size: 20px; } }
+  #msgBox { position: absolute; left: 10px; bottom: 44px; z-index: 3; width: min(360px, calc(100% - 20px)); padding: 6px 12px; font-size: 16px; line-height: 1.3;
+    pointer-events: none; opacity: 0; transition: opacity .5s; }
+  #msgBox.on { opacity: 1; }
+  #msgBox div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body:not(.gm) #msgBox, body.previewing #msgBox, body.gmBar #msgBox { bottom: 118px; }
+  #gmTop { flex-wrap: wrap; } #gmTop #previewBtn { flex: 1 1 100%; }    /* players: above the button bar */
+  @media (max-width: 1100px) { #msgBox { display: none; } }
+  #tileTypes .tilehead { grid-column: 1 / -1; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 4px 0 0; }
+  #tileTypes button { padding: 4px 2px; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  #tileTypes button i { width: 26px; height: 14px; border-radius: 3px; display: block; border: 1px solid #0006; }
+  #tileTypes button.on, #paintBtn.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  #pauseBar { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); z-index: 4; background: #3a1f14;
+    border: 1px solid #ff8a1e; color: #ffd2b0; padding: 6px 12px; border-radius: 10px; font-weight: 600; max-width: calc(100% - 32px); text-align: center; }
+  /* GM's events float over the table: the big throw button, then the event card in the same spot */
+  #eventBox { position: absolute; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 5; width: min(520px, calc(100% - 32px));
+    max-height: 60%; overflow-y: auto; filter: drop-shadow(0 6px 20px #000c); }
+  #eventBox .evwait, #eventBox .evcard { margin-top: 6px; }
+  .evwait .evbtns button.big { font-size: 22px; padding: 14px 20px; width: 100%; border-radius: 12px;
+    box-shadow: 0 0 0 4px #e0a64b55; animation: throwPulse 1.4s ease-in-out infinite; }
+  @keyframes throwPulse { 50% { box-shadow: 0 0 0 10px #e0a64b22; } }
+  #eventBox .evcard .evx { font-size: 13px; }
+  .evwait:has(button.big) { flex-direction: column; align-items: stretch; }
+  .evwait:has(button.big) .evbtns { justify-content: stretch; }
+  button.waiting { opacity: .45; }
+  #atkPanel, #warpBox { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(460px, calc(100% - 32px));
+    max-height: 70%; overflow-y: auto; filter: drop-shadow(0 6px 20px #000c); margin: 0; }
+  #warpBox { top: 30%; border-color: #5fe0ff; }
+  /* the moves window sits at the bottom, just above the player's button bar (Adam) */
+  #atkPanel { top: auto; bottom: 50px; max-height: calc(100% - 200px); }
+  body:not(.gm) #atkPanel, body.previewing #atkPanel, body.gmBar #atkPanel { bottom: 122px; }
+  /* the GM's button-bar switch sits on the board, bottom left (Adam) */
+  #gmBarBtn { display: none; position: absolute; left: 10px; bottom: 10px; z-index: 4; width: 46px; height: 46px; padding: 0; font-size: 24px; border-radius: 12px;
+    background: #1d2348; border: 2px solid #c8d0ff; box-shadow: 0 4px 12px #0009; }
+  body.gm:not(.previewing) #gmBarBtn { display: block; }
+  body.gm:not(.previewing) #hint { left: 64px; }
+  body.gm:not(.previewing):not(.gmBar) #msgBox { bottom: 64px; }
+  #gmBarBtn.on { background: #c8d0ff; border-color: #fff; }
+  @media (max-width: 700px) { #gmBarBtn { bottom: 70px; } }
+  /* four moves in a 2x2 grid; the numbers behind them stay hidden (Adam) */
+  #atkOwn { display: grid !important; grid-template-columns: 1fr 1fr; gap: 4px !important; }
+  #atkOwn .mvw { display: flex; min-width: 0; }
+  #atkOwn .mvw .chip { flex: 1; min-width: 0; padding: 8px 10px; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #atkOwn .mvw .inf { flex: none; }
+  #atkRows, #atkSum { display: none !important; }
+  #atkOwn .mvw .chip { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  #atkOwn .mvw .inf { font-size: 12px; font-weight: 700; padding: 4px 8px; border-width: 2px; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  #atkOwn .mvw .inf.on { background: #6b5320; color: #fff; }
+  /* Pokemon battle look for the four moves: type-coloured rounded buttons, white outlined name, type + category below (Adam) */
+  #atkOwn { gap: 6px !important; }
+  #atkOwn .mvw .chip.pkmv { --tc: #888; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 12px 6px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--tc) 78%, #fff) 0%, var(--tc) 55%, color-mix(in srgb, var(--tc) 70%, #000) 100%);
+    border: 2px solid color-mix(in srgb, var(--tc) 55%, #000); border-right: 0; border-radius: 12px 0 0 12px; color: #fff;
+    box-shadow: inset 0 1px 0 #fff6, 0 2px 0 #0006; text-align: left; }
+  #atkOwn .mvw .chip.pkmv b { font-size: 16px; letter-spacing: .3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    text-shadow: -1px -1px 0 #0009, 1px -1px 0 #0009, -1px 1px 0 #0009, 1px 1px 0 #0009, 0 2px 0 #0008; }
+  #atkOwn .mvw .chip.pkmv small { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #fffe;
+    background: #0004; padding: 0 6px; border-radius: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  #atkOwn .mvw .chip.pkmv:hover:not(:disabled) { filter: brightness(1.12); }
+  #atkOwn .mvw .chip.pkmv.on { outline: 3px solid #fff; outline-offset: -1px; box-shadow: 0 0 0 2px #000, 0 0 12px #fffa; }
+  #atkOwn .mvw .chip.pkmv:disabled { filter: grayscale(1) brightness(.6); opacity: .7; cursor: not-allowed; }
+  #atkOwn .mvw .inf { --tc: #888; background: color-mix(in srgb, var(--tc) 55%, #000); color: #fff; border: 2px solid color-mix(in srgb, var(--tc) 55%, #000);
+    border-left: 1px solid #0006; border-radius: 0 12px 12px 0; box-shadow: 0 2px 0 #0006; }
+  #atkOwn .mvw .inf.on { background: #fff; color: #222; }
+  #atkOwn .mvw:has(.chip:disabled) .inf { filter: grayscale(1) brightness(.7); }
+  #atkInfo:empty { display: none; }
+  /* the x in the moves window's corner closes it (Adam) */
+  #atkX { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border-radius: 50%; font-size: 14px; line-height: 1; font-weight: 700; }
+  #atkX:hover { background: #a33; border-color: #f66; color: #fff; }
+  #atkTitle { padding-right: 30px; }
+  @media (min-width: 701px) { #atkPanel, #warpBox { left: calc(50% - 150px); } }
+  #atkRows { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-top: 6px; }
+  #atkRows label { font-size: 11px; }
+  #atkRows input { width: 100%; }
+  .typechip { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #111; font-weight: 700; font-size: 12px; }
+  .librow { align-items: center; margin-top: 4px; }
+  .libgroup { margin-top: 8px; font-weight: 700; color: var(--accent); cursor: pointer; user-select: none; }
+  #updateBar { display: none; position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 5;
+    background: #14261a; border: 1px solid #5cb85c; border-radius: 10px; padding: 6px 10px; gap: 10px; align-items: center; }
+  #prompts { position: absolute; left: 0; top: 0; right: 300px; bottom: 0; pointer-events: none; overflow: hidden; }
+  #prompts .prompt { position: absolute; transform: translate(-50%, -100%); pointer-events: auto; background: #3a2f0a;
+    border: 1px solid #ffd23f; color: #ffe9a6; font-weight: 600; padding: 4px 10px; border-radius: 14px; white-space: nowrap; }
+  #prompts .prompt:hover { background: #57460f; }
+  #prompts .prompt.talk { background: #0f2f46; border-color: #4aa3e0; }
+  #prompts .prompt.stairs { background: #1d3a1d; border-color: #6cd06c; font-size: 15px; }
+  #prompts .prompt.talk:hover { background: #17435f; }
+  @media (max-width: 700px) { #prompts { right: 0; } }
+  #previewBar { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 4;
+    background: #2a2414; border: 1px solid var(--accent); border-radius: 10px; padding: 6px 10px; gap: 10px; align-items: center;
+    flex-wrap: wrap; justify-content: center; max-width: calc(100% - 32px); }
+  body.previewing #previewBar { display: flex; }
+  body.previewing #view { right: 300px; }
+  @media (max-width: 700px) { body.previewing #view { right: 0; } }
+  @media (min-width: 701px) { #eventBox { left: calc(50% - 150px); } #pauseBar { left: calc(50% - 150px); } }
+  #toggleSide { display: none; position: absolute; right: 10px; top: 10px; z-index: 3; }
+  #toggleSide { font-size: 20px; line-height: 1; padding: 6px 11px; }
+  @media (max-width: 700px) { #side.open { z-index: 8; } #toggleSide { z-index: 9; } }   /* the open panel covers the HUD boxes */
+  /* players on a computer: the same button hides the side panel and the board fills the screen (Adam) */
+  @media (min-width: 701px) {
+    body:not(.gm) #toggleSide, body.previewing #toggleSide { display: block; right: 310px; }
+    body:not(.gm) #turnBox, body.previewing #turnBox { right: 492px; }
+    body:not(.gm) #ctrlBtn, body.previewing #ctrlBtn { right: 362px; }
+    body.sideHidden:is(:not(.gm), .previewing) #ctrlBtn { right: 62px; }
+    body.sideHidden:is(:not(.gm), .previewing) #side { display: none !important; }
+    body.sideHidden:is(:not(.gm), .previewing) #view, body.sideHidden:is(:not(.gm), .previewing) #prompts { right: 0 !important; }
+    body.sideHidden:is(:not(.gm), .previewing) #toggleSide { right: 10px; }
+    body.sideHidden:is(:not(.gm), .previewing) #turnBox { right: 192px; }
+    body.sideHidden:is(:not(.gm), .previewing) :is(#actPanel, #bagPanel, #actBar, #floorTag, #status, #effPop, #atkPanel, #warpBox, #eventBox, #pauseBar) { left: 50% !important; }
+    body.sideHidden:is(:not(.gm), .previewing) #actBar { width: max-content; }
+    /* side panel hidden: a combat window bottom right with the log, toggled by the sword button (Adam) */
+    body.sideHidden:is(:not(.gm), .previewing) #combatToggle { display: block; }
+    body.sideHidden.combatOpen:is(:not(.gm), .previewing) #combatBox { display: flex; }
+  }
+  #combatBox, #combatToggle { display: none; }
+  #combatToggle { position: absolute; right: 10px; bottom: 10px; z-index: 4; width: 44px; height: 44px; padding: 0; font-size: 22px; border-radius: 12px;
+    background: #1d2348; border: 2px solid #c8d0ff; color: #fff; box-shadow: 0 4px 12px #0009; }
+  body.combatOpen #combatToggle { background: #c8d0ff; color: #1d2348; }
+  #combatBox { position: absolute; right: 10px; bottom: 62px; z-index: 4; width: 300px; height: min(260px, 40%); flex-direction: column;
+    background: #1d2348ee; border: 2px solid #c8d0ff; border-radius: 12px; box-shadow: 0 6px 20px #000c; overflow: hidden; }
+  #combatBox .cbh { display: flex; align-items: center; justify-content: space-between; padding: 5px 6px 5px 10px; font-weight: 700; color: #ffd76a;
+    border-bottom: 1px solid #c8d0ff55; }
+  #combatX { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 12px; line-height: 1; }
+  #combatX:hover { background: #a33; border-color: #f66; color: #fff; }
+  #combatLog { flex: 1; overflow-y: auto; padding: 6px 10px; font-size: 13px; }
+  #combatLog div { margin-bottom: 3px; word-wrap: break-word; }
+  #combatLog .roll { color: var(--accent); }
+  #combatLog .sys { color: #aab; font-style: italic; }
+  @media (min-width: 701px) {
+  }
+
+  @media (max-width: 700px) {
+    #view { right: 0; }
+    #side { width: min(320px, 92vw); transform: translateX(100%); transition: transform .2s; z-index: 2; }
+    #side.open { transform: none; }
+    #toggleSide { display: block; }
+    #ctrlBtn { right: 56px !important; font-size: 20px; padding: 6px 9px; } #ctrlBtn span { display: none; }
+  }
+
+  /* ===== Roll20-style GM panel + places bar (Twistedfocus 11-22) ===== */
+  :root { --sideW: 300px; }
+  /* icon tabs pinned to the top of the panel while it scrolls (Roll20's sidebar tabs) */
+  body.gm:not(.previewing) #side > #gmTabs { position: sticky; top: -10px; z-index: 6; margin: -10px -12px 0; padding: 8px 10px 8px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: nowrap; gap: 3px; flex-shrink: 0; }
+  #gmTabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 5px 2px 4px; }
+  #gmTabs button i { font-style: normal; font-size: 18px; line-height: 1; font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
+  #gmTabs button span { font-size: 12px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  /* drag the panel's left edge to make it wider (Roll20 lets you resize its sidebar) */
+  #sideGrip { display: none; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 7; }
+  #sideGrip:hover, body.sideDrag #sideGrip { background: var(--accent); opacity: .5; }
+  body.sideDrag, body.sideDrag * { cursor: ew-resize !important; user-select: none !important; }
+  @media (min-width: 701px) {
+    body.gm:not(.previewing) #sideGrip { display: block; }
+    body.gm:not(.previewing) #side { width: var(--sideW); }
+    body.gm:not(.previewing) #view, body.gm:not(.previewing) #prompts { right: var(--sideW); }
+    body.gm:not(.previewing) #ctrlBtn, body.gm:not(.previewing) #turnBox { right: calc(var(--sideW) + 10px); }
+    body.gm:not(.previewing) #side > #logSec { right: calc(var(--sideW) + 12px); }
+  }
+  /* the places bar: a tab hanging from the top of the table; open = folders + place cards (Roll20's page toolbar) */
+  #placesBar { display: none; position: absolute; top: 0; left: 0; right: var(--sideW); z-index: 6; pointer-events: none; }
+  body.gm:not(.previewing) #placesBar { display: block; }
+  @media (max-width: 700px) { #placesBar { right: 0; } }
+  #placesTab { pointer-events: auto; display: block; margin: 0 auto; border-radius: 0 0 10px 10px; border-top: 0; padding: 4px 14px 5px;
+    font-family: var(--pix, inherit); font-size: 14px; background: var(--panel); border-color: var(--line); box-shadow: 0 3px 10px #0007; }
+  body.placesOpen #placesTab { background: var(--orange, var(--accent)); color: #fffaf0; }
+  #placesBody { display: none; pointer-events: auto; background: var(--panel); border-bottom: 2px solid var(--line); box-shadow: 0 6px 18px #000a;
+    padding: 8px 10px 10px; }
+  body.placesOpen #placesBody { display: block; }
+  #placesFolders { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; align-items: center; }
+  #placesFolders button { flex: 0 0 auto; padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+  #placesFolders button.on { background: var(--orange, var(--accent)); color: #fffaf0; border-color: var(--orange, var(--accent)); font-weight: 700; }
+  #placesFolders .pfSave { margin-left: auto; }
+  #placesCards { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 4px; min-height: 104px; align-items: stretch; }
+  .placeCard { flex: 0 0 132px; position: relative; display: flex; flex-direction: column; padding: 0; border-radius: 8px; overflow: hidden;
+    background: var(--panel2); border: 2px solid var(--line); cursor: pointer; text-align: left; }
+  .placeCard:hover { border-color: var(--accent); }
+  .placeCard.here { border-color: var(--orange, var(--accent)); }
+  .placeCard .pcPic { height: 70px; background: #0004 center / cover no-repeat; display: flex; align-items: center; justify-content: center;
+    font-size: 26px; color: var(--dim); }
+  .placeCard .pcName { padding: 4px 6px 0; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .placeCard .pcSub { padding: 0 6px 4px; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .placeCard .pcTags { position: absolute; top: 4px; left: 4px; right: 4px; display: flex; gap: 3px; flex-wrap: wrap; pointer-events: none; }
+  .placeCard .pcTags b { background: #000c; color: #ffd27a; font-size: 10px; padding: 1px 5px; border-radius: 6px; font-weight: 700; }
+  .placeCard .pcGo { position: absolute; right: 4px; bottom: 30px; padding: 2px 6px; font-size: 11px; display: none; }
+  .placeCard:hover .pcGo, .placeCard .pcGo.show { display: block; }
+  #placesEmpty { color: var(--dim); font-size: 13px; padding: 10px 4px; }
+  /* Friend Zone minis (11-22): camp folders of sprite buttons */
+  #fzList .fzGroup { font-size: 12px; color: var(--accent); margin: 8px 0 4px; font-weight: 700; }
+  #fzList .fzRow { display: flex; flex-wrap: wrap; gap: 4px; }
+  #fzList .fzBtn { display: flex; align-items: center; gap: 4px; padding: 3px 8px 3px 3px; font-size: 12px; }
+  #fzList .fzBtn .fzPic { width: 28px; height: 28px; background-repeat: no-repeat; image-rendering: pixelated; flex: 0 0 auto; }
+  #fzList .fzNote { color: var(--dim); font-size: 12px; }
+  /* the floor name tag sat where the Places tab hangs: below it for the GM */
+  body.gm:not(.previewing) #floorTag { top: 40px; }
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <div class="card">
+    <h1>Tabletop</h1>
+    <p>A shared board with minis. The GM hosts, players join with the room code.</p>
+    <label for="nameIn">Your name</label>
+    <input id="nameIn" maxlength="24" placeholder="e.g. Steve" style="width:100%">
+    <div style="height:12px"></div>
+    <button id="createBtn" class="primary" style="width:100%">Create game (I'm the GM)</button>
+    <div class="or">or join one</div>
+    <div class="row">
+      <input id="codeIn" maxlength="8" placeholder="Room code" style="text-transform:uppercase">
+      <button id="joinBtn" class="fit">Join</button>
+    </div>
+    <div id="lobbyMsg"></div>
+    <!-- 11-22 moving a GM's game to another copy of the tabletop (Twistedfocus's own GitHub): shown only with ?moveto= -->
+    <div id="moveBox" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <div id="moveText" style="font-size:14px;margin-bottom:8px"></div>
+      <button id="moveBtn" class="primary" style="width:100%"></button>
+      <div id="moveMsg" style="font-size:13px;margin-top:6px;color:var(--dim)"></div>
+    </div>
+  </div>
+</div>
+
+<div id="game">
+  <div id="view"></div>
+  <div id="status"></div>
+<div id="hud"><img id="hudPic" alt=""><div class="hb"><div class="hn"><span id="hudName"></span><small id="hudHp"></small></div><div class="hpb"><i id="hudBar"></i></div><div class="ht" id="hudTurn"></div><div id="hudAct"></div><div id="hudSt"></div></div></div>
+<div id="teamTiles"></div>
+<div id="yourTurn"></div>
+<div id="msgBox"></div>
+<div id="vsBox"></div>
+<div id="effPop"></div>
+<div id="turnBox"></div>
+<div id="turnStrip" class="pmd"><div id="tsHead" title="Drag to move (double-click: back to the top)"><span id="tsTitle">Turn order</span><button id="tsMin" title="Minimize">–</button></div><div id="tsBody"></div></div>
+  <div id="floorTag" style="display:none"></div>
+  <div id="floorBanner"></div>
+  <div id="endScreen"><div class="et"></div><div class="es"></div><button id="endClose" class="fit">Close</button></div>
+  <div id="prompts"></div>
+  <div id="hint"></div>
+  <button id="toggleSide" title="Show or hide the side panel">&#9776;</button>
+  <button id="ctrlBtn" title="Controls">⌨️ <span>Controls</span></button>
+  <div id="ctrlShade" style="display:none"></div>
+  <div id="ctrlPanel" class="evcard" style="display:none">
+    <button id="ctrlX" class="fit" title="Close">✕</button>
+    <div class="evt">⌨️ Controls</div>
+    <div id="ctrlList"></div>
+  </div>
+  <button id="gmBarBtn" class="fit">🎮</button>
+  <div id="combatBox"><div class="cbh">&#9876; Combat <button id="combatX" class="fit" title="Hide the combat window">&#10005;</button></div><div id="combatLog"></div></div>
+  <button id="combatToggle" class="fit" title="Show or hide the combat window">&#9876;</button>
+  <div id="pauseBar" style="display:none"></div>
+  <div id="eventBox" style="display:none"></div>
+  <div id="atkPanel" class="evcard" style="display:none">
+    <button id="atkX" class="fit" title="Close">✕</button>
+    <div class="evt" id="atkTitle"></div>
+    <div id="atkOwn" class="row" style="flex-wrap:wrap;gap:4px;margin-bottom:4px"></div>
+    <input id="atkMove" list="atkMoves" placeholder="Or type any move to search" style="width:100%" autocomplete="off">
+    <datalist id="atkMoves"></datalist>
+    <div class="evx" id="atkInfo" style="margin-top:4px"></div>
+    <div id="atkRows"></div>
+    <div class="evx" id="atkSum" style="margin-top:6px;color:var(--dim)"></div>
+    <div class="row evb">
+      <button id="atkAcc" class="primary">🎲 Roll accuracy</button>
+      <button id="atkDmg" class="primary" style="display:none">🎲 Roll damage</button>
+      <button id="atkClose" class="fit">Close</button>
+    </div>
+  </div>
+  <div id="warpBox" class="evcard" style="display:none"></div>
+  <div id="bagShade" style="display:none"></div>
+  <div id="bagPanel" class="evcard" style="display:none">
+    <div class="evt">🎒 Team bag</div>
+    <div id="bagList"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="bagName" list="bagItems" maxlength="30" placeholder="Add an item (e.g. Oran Berry)" autocomplete="off">
+      <datalist id="bagItems"></datalist>
+      <input id="bagN" type="number" min="1" max="99" value="1" class="fit" style="width:56px">
+      <button id="bagAddBtn" class="fit">Add</button>
+    </div>
+    <div class="row evb"><button id="bagClose" class="fit">Close</button></div>
+  </div>
+  <div id="actPanel" class="evcard" style="display:none">
+    <div class="evt" id="actTitle"><i>🎯</i> <span>Actions</span></div>
+    <div id="actList"></div>
+    <div class="evx" style="color:var(--dim);margin-top:6px">🎲 = dice you roll · each 4, 5 or 6 is a success · <b>any time</b> = also outside your turn</div>
+    <div class="row evb"><button id="actClose" class="fit">Close</button></div>
+  </div>
+  <div id="actBar" style="display:none">
+    <span id="barGrip" title="Drag to move the bar">⠿</span>
+    <button id="actMove" data-key="M" title="Move (M)"><i>👣</i> <span>Move</span></button>
+    <button id="actAttack" class="primary" data-key="A" title="Attack (A)"><i>⚔</i> <span>Attack</span></button>
+    <button id="actDash" data-key="D" title="Dash (D)"><i>💨</i> <span>Dash</span></button>
+    <button id="actMore" data-key="Q" title="Actions (Q)">🎯 Actions</button>
+    <button id="actBag" data-key="B" title="Bag (B)"><i>🎒</i> <span>Bag</span></button>
+    <button id="actEnd" data-key="E"><i>&#9197;</i> <span>End turn</span></button>
+  </div>
+  <div id="updateBar">
+    <span>A new version of the tabletop is out.</span>
+    <button id="updateReload" class="primary">Reload now</button>
+  </div>
+  <div id="previewBar">
+    <span>👁 Player view: this is what players see (their buttons show here but don't work).</span>
+    <label style="margin:0;color:inherit">Looking as <select id="previewAs"></select></label>
+    <button id="previewBack" class="primary">Back to GM view</button>
+  </div>
+  <!-- Twistedfocus 11-22 "I also want to be able to select places I've created from a folder at the top (like Roll20)":
+       Roll20's page toolbar. Folders = saved-board groups, cards = saved places; a place opens on its own layer (= a Roll20 page) -->
+  <div id="placesBar">
+    <div id="placesBody">
+      <div id="placesFolders"></div>
+      <div id="placesCards"></div>
+    </div>
+    <button id="placesTab" title="Your saved places, in folders (like Roll20's page toolbar)">🗺 Places <span id="placesArrow">▾</span></button>
+  </div>
+  <aside id="side">
+    <div id="sideGrip" title="Drag to make the panel wider or narrower (double-click: normal width)"></div>
+    <!-- Twistedfocus 11-22 "Make the sidepanel more like Roll20": icon tabs that stay at the top while the panel scrolls -->
+    <nav id="gmTabs" class="gm-only">
+      <button data-tab="minis" title="Minis"><i>🧍</i><span>Minis</span></button><button data-tab="combat" title="Combat, players, dice"><i>⚔️</i><span>Combat</span></button><button data-tab="terrain" title="Terrain"><i>🌿</i><span>Terrain</span></button><button data-tab="floors" title="Random floors"><i>🪜</i><span>Floors</span></button><button data-tab="boards" title="Boards, layers, saved places"><i>🗺️</i><span>Boards</span></button>
+    </nav>
+    <section>
+      <div id="roomLine">
+        <div><div style="color:var(--dim);font-size:12px">Room</div><div id="roomCode">------</div></div>
+        <button id="copyLink" class="fit">Copy invite link</button>
+      </div>
+      <div id="whoAmI" style="color:var(--dim);font-size:12px;margin-top:4px"></div>
+      <div style="color:var(--dim);font-size:11px;margin-top:2px">Version <span id="verLabel"></span></div>
+      <div id="gmTop" class="row gm-only" style="margin-top:8px">
+        <button id="previewBtn" title="Opens a window where you play as a test player: everything works there">👁 Play as a test player</button>
+        <button id="testLinkBtn" class="fit" title="Copy the test player's link, to open it in another browser">🔗 Test link</button>
+        <button id="peekBtn" class="fit" title="Look at the table as players see it, in this window (look only)">Peek</button>
+      </div>
+      <input id="setSearch" class="gm-only" type="search" placeholder="🔍 Search settings (e.g. traps, fog, walls)" autocomplete="off" style="width:100%;margin-top:8px">
+      <div id="setSearchNone" class="gm-only" style="display:none;color:var(--dim);font-size:12px;margin-top:4px">Nothing matches.</div>
+    </section>
+
+    <section id="selSec" data-tab="minis combat" style="display:none">
+      <h3>Selected mini</h3>
+      <label>Name</label>
+      <input id="selName" maxlength="24" style="width:100%">
+      <div class="row">
+        <div class="fit"><label>Colour</label><input id="selColor" type="color"></div>
+        <div id="selSizeBox"><label>Size</label>
+          <select id="selSize"><option value="0.7">Small</option><option value="1">Medium</option><option value="2">Large</option><option value="3">Huge</option><option value="custom">Any size…</option></select>
+        </div>
+        <button id="selTurn" class="fit" style="margin-top:20px" title="Turn 45°">Turn ↻</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="selPic" title="A picture for this mini's tile, the team tiles and the turn order (any image file; it stays in this game)">🖼 Portrait…</button>
+        <button id="selPicClear" class="fit" title="Back to a picture of the mini itself">✕</button>
+        <input id="selPicFile" type="file" accept="image/*" style="display:none">
+      </div>
+      <button id="selAttack" class="primary" style="width:100%;margin-top:8px" title="Pick who to attack, then a move: accuracy and damage dice are rolled for you">⚔ Attack…</button>
+      <div class="stats">
+        <div id="speciesRow">
+          <label>Pokémon (from the Voice of the Forest site: fills attributes, HP, types and moves)</label>
+          <input id="selSpecies" list="speciesList" placeholder="Type a Pokémon…" style="width:100%" autocomplete="off">
+          <datalist id="speciesList"></datalist>
+          <div id="speciesInfo" style="color:var(--dim);font-size:12px;margin-top:2px"></div>
+        </div>
+        <div class="row">
+          <div><label>Dexterity</label><input id="st_dex" type="number" min="0" max="20"></div>
+          <div><label>Alert</label><input id="st_alert" type="number" min="0" max="20"></div>
+          <div><label>HP</label><input id="st_hp" type="number" min="0" max="99"></div>
+          <div><label>Max HP</label><input id="st_hpMax" type="number" min="0" max="99"></div>
+        </div>
+        <div id="stEditRow" class="row" style="margin-top:6px">
+          <button id="hpDown" title="Lose 1 HP">−1 HP</button>
+          <button id="hpUp" title="Heal 1 HP">+1 HP</button>
+        </div>
+        <div id="stStatusRow" class="row" style="margin-top:6px">
+          <select id="stStatus"><option value="">Add a status…</option></select>
+          <input id="stRounds" type="number" min="1" max="20" placeholder="Rounds" class="fit" style="width:76px" title="How many rounds it lasts: it counts down over the mini's head and wears off at 0 (blank = until removed)">
+          <button id="stAdd" class="fit">Add</button>
+        </div>
+        <div id="stChips"></div>
+        <div id="stMove" style="color:var(--dim);font-size:12px;margin-top:4px"></div>
+      </div>
+      <div id="selCustom" class="row" style="display:none;margin-top:6px">
+        <label class="fit" style="margin:0">Squares</label>
+        <input id="selW" type="number" min="1" max="12" title="Across">
+        <span class="fit">×</span>
+        <input id="selD" type="number" min="1" max="12" title="Deep">
+      </div>
+      <div class="gm-only">
+        <label>Attached to</label>
+        <div class="row">
+          <span id="selParent" style="color:var(--dim)">nothing</span>
+          <button id="selAttach" class="fit">Attach to…</button>
+          <button id="selDetach" class="fit" style="display:none">Detach</button>
+        </div>
+        <label>3D model</label>
+        <div class="row">
+          <select id="selModel"></select>
+          <label class="fit" style="margin:0"><span class="btnlike">Upload .glb</span><input id="modelFile" type="file" accept=".glb,model/gltf-binary" hidden></label>
+        </div>
+        <div style="color:var(--dim);font-size:11px;margin-top:2px">Built-in models: Golett: <a href="https://sketchfab.com/3d-models/golett-0d239c883bc54a4f94a3e15ac789e378" target="_blank" rel="noopener" style="color:inherit">"Golett"</a> by nguyenlouis32, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a>; Magnemite: <a href="https://sketchfab.com/3d-models/magnemite-dae3d444292e451ab41994410b90a8f8" target="_blank" rel="noopener" style="color:inherit">"Magnemite"</a> by nguyenlouis32, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a>. Pokémon models marked "(Pixelmon)": from the <a href="https://pixelmonmod.com" target="_blank" rel="noopener" style="color:inherit">Pixelmon</a> mod, made by the Pixelmon team, used with permission.</div>
+        <label>Kind</label>
+        <select id="selSide" style="width:100%"><option value="enemy">Enemy</option><option value="npc">NPC</option><option value="player">Player</option></select>
+        <div id="selJobRow"><label>NPC role (shown on its name; players can talk to it)</label>
+          <input id="selJob" maxlength="30" placeholder="e.g. Shopkeeper, Healer, Quest giver" style="width:100%"></div>
+        <label>Character on the Voice of the Forest site</label>
+        <div class="row">
+          <select id="selSite"></select>
+          <input id="siteCode" class="fit" maxlength="24" style="width:76px" title="The site's table code (VOICE unless the GM moved it)">
+        </div>
+        <div style="color:var(--dim);font-size:12px">Linked minis follow the site: name, HP, attributes, skills, types, moves and statuses update here when they change there.</div>
+        <div id="selOwnerRow"><label>Controlled by</label>
+        <select id="selOwner" style="width:100%"></select></div>
+        <div class="row" style="margin-top:8px">
+          <button id="selHide">Hide from players</button>
+          <button id="libSave" class="fit" title="Keep a copy in your saved minis list (players never see the list)">Save to list</button>
+          <button id="selFight" style="display:none">Add to turn order</button>
+          <button id="selDel" class="danger fit">Delete</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="gm-only" data-tab="minis">
+      <h3>Add a mini</h3>
+      <div class="row">
+        <input id="newName" maxlength="24" placeholder="Name (e.g. Goblin)">
+        <input id="newColor" type="color" value="#7a9e3f" class="fit">
+      </div>
+      <div class="row" style="margin-top:6px">
+        <select id="newSide" class="fit"><option value="enemy">Enemy</option><option value="npc">NPC</option><option value="player">Player</option></select>
+        <input id="newJob" maxlength="30" placeholder="Role (e.g. Shopkeeper)">
+        <select id="newOwner"></select>
+        <button id="addFig" class="primary fit">Add</button>
+      </div>
+      <div style="color:var(--dim);font-size:12px;margin-top:4px"><b style="color:#e0503c">Enemies</b> fight. <b style="color:#4aa3e0">NPCs</b> can't be attacked by players; a player standing next to one gets a <b>Talk</b> button. <b style="color:#46c46a">Players</b> are controlled by whoever you pick.</div>
+      <label style="color:var(--text);margin-top:6px"><input id="newHidden" type="checkbox"> Hidden from players while I work on it</label>
+      <!-- Twistedfocus 11-22 "add the minis (the sprites from the website Friend Zone)" -->
+      <h3 style="margin-top:12px">Friend Zone minis</h3>
+      <div style="color:var(--dim);font-size:12px">The walking sprites from the site's Friend Zone. Click one to put it on the table (with its Pokémon's stats), or type any Pokémon.</div>
+      <div style="color:var(--dim);font-size:11px;margin-top:2px">Sprites: <a href="https://sprites.pmdcollab.org" target="_blank" rel="noopener" style="color:inherit">PMD Sprite Repository</a> (PMDCollab SpriteCollab), by its artists.</div>
+      <div class="row" style="margin-top:6px">
+        <input id="fzAny" list="speciesList" placeholder="Any Pokémon (e.g. Pikachu)" autocomplete="off">
+        <button id="fzAnyAdd" class="fit primary">Add</button>
+      </div>
+      <div id="fzList" style="margin-top:6px"></div>
+      <h3 style="margin-top:12px">Saved minis</h3>
+      <input id="miniGroup" maxlength="30" list="miniGroups" placeholder="Group for Save to list (e.g. Floor 1 enemies)" style="width:100%">
+      <datalist id="miniGroups"></datalist>
+      <div id="libList"></div>
+    </section>
+
+    <section id="partySec" data-tab="combat" style="display:none">
+      <h3>Exploring <span id="partyTurn" style="color:var(--text);float:right;text-transform:none;letter-spacing:0"></span></h3>
+      <div style="color:var(--dim);font-size:12px">All allies move and act in the same turn, each up to their range. Stand next to a <b style="color:#ffd23f">?</b> and click <b>Interact</b> to see what it is (free: it doesn't use your action).</div>
+      <div class="row" style="margin-top:6px">
+        <button id="partyDash" title="Spend this turn's action on extra movement (press again to undo while within a normal move)">Dash</button>
+        <button id="partyNext" class="primary" style="display:none" title="Everyone has moved: start the next party turn">Next party turn</button>
+      </div>
+    </section>
+
+    <section id="combatSec" data-tab="combat" style="display:none">
+      <h3>Turn order <span id="combatRound" style="color:var(--text);float:right;text-transform:none;letter-spacing:0"></span></h3>
+      <div id="turnList"></div>
+      <div id="turnWho" style="margin-top:6px;font-weight:600"></div>
+      <div id="turnBtns" class="row" style="margin-top:6px;display:none">
+        <button id="turnDash" title="Spend your action on extra movement">Dash</button>
+        <button id="turnEnd" class="primary">End turn</button>
+      </div>
+    </section>
+
+    <section class="gm-only" data-tab="combat">
+      <h3>Rules &amp; dungeon</h3>
+      <div class="row">
+        <button id="combatStart" class="primary">Start combat (roll initiative)</button>
+        <button id="combatEndBtn" class="danger" style="display:none">End combat</button>
+      </div>
+      <label style="color:var(--text);margin-top:8px"><input id="ruleLimit" type="checkbox" checked> Limit moves to each turn's range (combat and party turns)</label>
+      <label style="color:var(--text)"><input id="ruleEdgeWalls" type="checkbox" checked> Low walls round every board's edge (a one-square gap in the middle where two boards join)</label>
+      <label style="color:var(--text)"><input id="ruleReveal" type="checkbox" checked> Reveal a hidden area when a player stands at its open edge</label>
+      <label style="color:var(--text)" title="A hidden board or a random floor's room counts as one area. The throw button pops up for you like a ? Event."><input id="ruleExploreEv" type="checkbox"> Explored areas &amp; dungeon events (count each new area; every 2 = a dungeon event)</label>
+      <div class="row" style="margin-top:8px">
+        <span id="exploredRow">Areas explored: <b id="explored">0</b></span>
+        <button id="eventRoll" class="fit" title="Throw a hidden d6: 1 trap/hazard, 2 enemy team, 3 treasure, 4 guild challenge, 5 safe passage, 6 mission clue">Roll dungeon event</button>
+      </div>
+      <div style="color:var(--dim);font-size:12px;margin-top:4px">Place <b style="color:#ffd23f">? Event</b> markers (Terrain &gt; Events). When an ally next to one clicks Interact, a big throw button pops up over the table (only you see it and the die); the event card with the rules and helper rolls then shows in the same spot.</div>
+    </section>
+
+    <section id="floorSec" class="gm-only" data-tab="floors">
+      <h3>Random floor</h3>
+      <div class="row">
+        <div><label>Dungeon name</label><input id="floorName" maxlength="30" placeholder="Mystery Dungeon"></div>
+        <div class="fit"><label>Floor</label><input id="floorNum" type="number" min="1" max="99" value="1" style="width:60px"></div>
+      </div>
+      <div class="row">
+        <div><label>Look</label><select id="floorLook"><option value="cave">Cave</option><option value="forest">Forest</option><option value="ice">Ice</option><option value="ruins">Ruins</option><option value="volcano">Volcano</option><option value="beach">Beach cave</option></select></div>
+        <div><label>Size</label><select id="floorSize"><option value="">Keep the board's size</option><option value="small">Small (20 x 14)</option><option value="medium" selected>Medium (28 x 20)</option><option value="large">Large (36 x 26)</option><option value="huge">Huge (48 x 32)</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>Enemies</label><input id="floorFoes" type="number" min="0" max="12" value="3"></div>
+        <div><label>Chests</label><input id="floorItems" type="number" min="0" max="8" value="2"></div>
+        <div><label>? Events</label><input id="floorEvents" type="number" min="0" max="8" value="2"></div>
+        <div><label>Traps</label><input id="floorTraps" type="number" min="0" max="10" value="2" title="Hidden traps: only you see them"></div>
+      </div>
+      <div class="row">
+        <div><label>Background</label><select id="bgPick" title="The picture behind the table, for everyone. Picking a floor Look switches it to the matching one."><option value="">None (plain dark)</option><option value="cave">Cave</option><option value="forest">Forest</option><option value="ice">Ice</option><option value="ruins">Ruins</option><option value="volcano">Volcano</option><option value="beach">Beach cave</option><option value="sky">Open sky</option><option value="night">Starry night</option><option value="dungeon">Dark dungeon</option><option value="sea">Under the sea</option></select></div>
+      </div>
+      <label>Wild Pokémon on this dungeon (picked at random)</label>
+      <input id="floorFoeNames" maxlength="200" placeholder="Golett, Zubat, Geodude" style="width:100%">
+      <div class="row" style="margin-top:8px">
+        <button id="floorMake" class="primary" title="Rooms and corridors on the board picked in the Boards tab">🎲 Make floor</button>
+        <button id="floorNext" title="Same dungeon, one floor deeper">⬇ Next floor</button>
+        <button id="floorShow" title="Players only see rooms an ally has reached: this shows them the whole floor">&#128065; Show whole floor</button>
+      </div>
+      <div style="color:var(--dim);font-size:12px;margin-top:4px">Builds rooms joined by corridors on the picked board, with stairs in the room furthest from the team. Players only see the room they start in: corridors light up as allies walk, and a room appears when someone reaches its doorway. A player standing on the <b>Stairs</b> gets a "Go to the next floor" button: the whole team goes down to a fresh floor. Pokémon names that match the site get their stats.</div>
+    </section>
+
+    <section class="gm-only fold" data-fold="terrain" data-tab="terrain">
+      <h3>Terrain <span class="foldNow" id="terrainNow"></span></h3>
+      <div id="tileTypes"></div>
+      <div class="row" style="margin-top:6px">
+        <button id="paintBtn">Paint: off</button>
+        <button id="fillTiles" class="fit">Fill board</button>
+        <button id="clearTiles" class="fit">Clear</button>
+      </div>
+      <div style="color:var(--dim);font-size:12px;margin-top:4px">While painting, click or drag on the board to place tiles. Minis can't be moved until you turn painting off.</div>
+    </section>
+
+    <section class="gm-only" data-tab="boards">
+      <h3>Saved boards</h3>
+      <div style="color:var(--dim);font-size:12px">Keeps the picked board's size, picture, terrain and GM minis. Players never see this list.</div>
+      <div class="row" style="margin-top:6px">
+        <input id="boardSaveName" maxlength="40" placeholder="Name (e.g. Mossy cave)">
+        <input id="boardGroup" maxlength="30" list="boardGroups" placeholder="Group (e.g. Floor 1)">
+        <datalist id="boardGroups"></datalist>
+      </div>
+      <button id="boardSave" style="width:100%;margin-top:6px">Save picked board</button>
+      <div id="boardLibList" style="margin-top:4px"></div>
+    </section>
+
+    <section class="gm-only fold" data-fold="boards" data-tab="boards">
+      <h3>Layers</h3>
+      <div class="row"><select id="layerPick" style="flex:1"></select><button id="layerNew" class="fit" title="A new layer with an empty board: map a floor there, or make a random floor on it">+ New layer</button></div>
+      <div class="row" style="margin-top:4px"><button id="layerLive" title="Players will only see this layer">Move the team to this layer</button></div>
+      <div style="color:var(--dim);font-size:12px;margin:4px 0 10px">Map out several floors at once: only you see layers other than the one the team is on. Stairs on the team's layer take everyone to the next layer.</div>
+      <h3>Boards <span class="foldNow" id="boardsNow"></span></h3>
+      <div id="boardList"></div>
+      <div class="row" style="margin-top:6px">
+        <button id="addBoard">+ Add board</button>
+        <button id="moveBoards">Move boards: off</button>
+        <button id="delBoard" class="danger fit" title="Delete the picked board">Delete</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="addHiddenBoard" title="A new board players can't see yet: a dungeon area to explore">+ Add hidden area</button>
+        <button id="hideBoard" class="fit">Hide from players</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="wallBoard" title="Put walls all round the picked board's edge. Then paint a Door (or use the Eraser) on one edge square: that's the room's only way in.">Wall the edges</button>
+      </div>
+      <div style="color:var(--dim);font-size:12px;margin:6px 0 2px">The picked board (outlined):</div>
+      <div class="row">
+        <div><label>Columns</label><input id="cols" type="number" min="2" max="80"></div>
+        <div><label>Rows</label><input id="rows" type="number" min="2" max="80"></div>
+        <button id="applyBoard" class="fit" style="margin-top:20px">Set</button>
+      </div>
+      <label>Map picture</label>
+      <div class="row">
+        <input id="mapFile" type="file" accept="image/*">
+        <button id="clearMap" class="fit">Clear</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="fit" style="margin:0;color:var(--text)"><input id="gridOn" type="checkbox" checked> Grid lines</label>
+        <label class="fit" style="margin:0;color:var(--text)"><input id="snapOn" type="checkbox" checked> Snap to squares</label>
+      </div>
+    </section>
+
+    <section class="tblSec" data-tab="combat">
+      <h3>Players</h3>
+      <div id="players"></div>
+    </section>
+
+    <section class="tblSec" data-tab="combat">
+      <h3>Dice</h3>
+      <div id="dice"></div>
+      <div class="row" style="margin-top:6px">
+        <label class="fit" style="margin:0">How many</label>
+        <input id="diceN" type="number" min="1" max="20" value="1" class="fit" style="width:64px">
+        <label class="fit" style="margin:0;color:var(--text)"><input id="diceHidden" type="checkbox"> Only me</label>
+        <label class="fit" style="margin:0;color:var(--text)"><input id="dice3d" type="checkbox" checked> 3D</label>
+      </div>
+    </section>
+
+    <section class="tblSec" data-tab="combat">
+      <h3>Move areas &amp; ping</h3>
+      <div class="row">
+        <select id="areaKind" title="Mystery Dungeon move ranges"><option value="burst">Nearby (burst)</option><option value="cone">Front + sides (cone)</option><option value="line">Line</option></select>
+        <label class="fit" style="margin:0">Size</label>
+        <input id="areaSize" type="number" min="1" max="10" value="2" class="fit" style="width:56px" title="Squares out from the start">
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="areaPlace" class="primary" title="Pick your mini first and a cone or line starts from it">📐 Place</button>
+        <button id="pingBtn" title="Or Alt+click anywhere">📍 Ping</button>
+        <button id="areaClear" class="fit" title="GM: all areas, players: your own">Clear</button>
+      </div>
+      <div id="areaList"></div>
+      <div style="color:var(--dim);font-size:12px;margin-top:4px">Areas clear by themselves at the next turn. Minis inside get a pulsing ring.</div>
+    </section>
+
+    <section id="logSec" data-tab="minis combat terrain floors boards">
+      <h3>Log <button id="logMin" class="fit" title="Minimize the log">–</button></h3>
+      <div id="log"></div>
+      <div class="row" style="margin-top:6px">
+        <input id="chatIn" maxlength="300" placeholder="Say something">
+        <button id="chatSend" class="fit">Send</button>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="tabletop.js?v=111"></script>
+</body>
+</html>
