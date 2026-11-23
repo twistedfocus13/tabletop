@@ -5505,6 +5505,8 @@ function onDown(e) {
     if (b) { e.stopPropagation(); pickBoard(b.id); }
     return;
   }
+  // The Layers tool is navigation only: never move a mini by accident.
+  if (isHost && gmView() && gmEditMode === 'layers') return;
   if (areaDraft) {
     e.stopPropagation();
     const p = floorAt(e);
@@ -5554,6 +5556,13 @@ function onDown(e) {
     return;
   }
   const id = figAt(e);
+  if (isHost && gmView() && id) {
+    const candidate = state.figures[id];
+    // In Tokens mode, secret GM-only pieces cannot be manipulated.
+    if (gmEditMode === 'tokens' && candidate?.hidden) { e.stopPropagation(); return; }
+    // In GM mode, player-owned minis are locked; secret NPCs remain editable.
+    if (gmEditMode === 'gm' && candidate?.owner) { e.stopPropagation(); return; }
+  }
   if (!id) {                                    // a click (not a drag) on a square sends the selected mini there (Adam)
     let sel = selectedId && state.figures[selectedId];
     // players: with nothing (or someone else) picked, the click moves their own mini, no need to pick it every time (Adam)
@@ -5655,6 +5664,8 @@ function keyboardMini() {
 }
 addEventListener('keydown', e => {
   if (isHost && gmEditMode !== 'tokens' && gmEditMode !== 'gm') return;
+  if (isHost && gmEditMode === 'tokens' && selectedId && state.figures[selectedId]?.hidden) return;
+  if (isHost && gmEditMode === 'gm' && selectedId && state.figures[selectedId]?.owner) return;
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || preview ||
       e.target?.isContentEditable || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target?.tagName) ||
       $('game').style.display !== 'block' || painting || moveBoards || dragging || attackFor || attachFor || itemFor) return;
