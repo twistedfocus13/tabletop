@@ -1,0 +1,23 @@
+name: Roll20 sidebar regression
+on:
+  push:
+    branches:
+      - fix/v113-roll20-regressions
+  pull_request:
+    paths:
+      - 'tabletop.js'
+      - 'roll20-shell.js'
+      - 'index.html'
+      - 'tests/roll20-regression.test.cjs'
+      - '.github/workflows/roll20-regression.yml'
+jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/roll20-regression.test.cjs
