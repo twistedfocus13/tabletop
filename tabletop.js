@@ -1332,7 +1332,18 @@ function handle(msg, from) {
     }
     case 'chat': {
       const text = clean(msg.text, 300);
-      if (text) addLog({ kind: 'chat', from, text });
+      if (!text) break;
+      // Private messages: only the recipient, the sender, and the GM
+      // receive the message. Never rely on client-side filtering for privacy.
+      if (msg.to) {
+        const destination = String(msg.to).trim().toLowerCase();
+        const target = destination === 'gm' ? state.gm :
+          Object.keys(state.players).find(id => state.players[id]?.name?.toLowerCase() === destination);
+        if (!target) { note(from, 'Player not found: ' + clean(msg.to, 50)); break; }
+        const entry = {kind:'chat',from,text,to:target};
+        addLog(entry);
+        if (from !== target && from !== state.gm) sendAll({t:'log',entry},cid=>cid===from);
+      } else addLog({ kind: 'chat', from, text });
       break;
     }
   }
@@ -6457,7 +6468,24 @@ function wirePanel() {
     };
     $('dice').appendChild(b);
   }
-  const sendChat = () => { const t = $('chatIn').value.trim(); if (t) { act({ t: 'chat', text: t }); $('chatIn').value = ''; } };
+  const sendChat = () => {
+    const raw = $('chatIn').value.trim();
+    if (!raw) return;
+    // Roll20-style commands, using the tabletop's own authoritative dice/chat.
+    const roll = /^\/(?:r|roll|gmroll|gr)\s+(\d{1,2})d(4|6|8|10|12|20|100)$/i.exec(raw);
+    if (roll) {
+      act({t:'roll',n:+roll[1],sides:+roll[2],hidden:/^\/(?:gmroll|gr)\b/i.test(raw)});
+    } else {
+      const whisper = /^\/w\s+(?:"([^"]+)"|(\S+))\s+([\s\S]+)$/i.exec(raw);
+      if (whisper) act({t:'chat',to:whisper[1]||whisper[2],text:whisper[3]});
+      else if (raw.startsWith('/')) {
+        status('Unknown chat command. Try /roll 1d20 or /w gm hello.');
+        setTimeout(()=>status(''),3500);
+        return;
+      } else act({t:'chat',text:raw});
+    }
+    $('chatIn').value='';
+  };
   $('chatSend').onclick = sendChat;
   $('chatIn').onkeydown = e => { if (e.key === 'Enter') sendChat(); };
   $('copyLink').onclick = async () => {
