@@ -3541,20 +3541,33 @@ function resize() {
 let gmFogGroup = null, gmLightGroup = null;
 function refreshGmFog() {
   if (!scene) return;
-  if (gmFogGroup) { scene.remove(gmFogGroup); gmFogGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); }
+  if (gmFogGroup) {
+    scene.remove(gmFogGroup);
+    gmFogGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  }
   gmFogGroup = new THREE.Group();
-  const gm = isHost && gmView();
-  const mat = new THREE.MeshBasicMaterial({ color:gm ? 0x544a70 : 0x0b0c17,
-    transparent:gm, opacity:gm ? 0.52 : 1, depthWrite:!gm, side:THREE.DoubleSide });
+  const gm = isHost && gmView(), cells = [];
   for (const key of Object.keys(state.gmFog || {})) {
     const [i,j] = key.split(',').map(Number), b = boardAt(i+.5,j+.5);
     if (!b || (isHost ? (gm ? !gmSees(b) : !shown(b)) : !shown(b))) continue;
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(i+.5,gm ? 0.25 : 2.8,j+.5);
-    mesh.renderOrder = gm ? 8 : 999;
-    if (!gm) mesh.material = mat; // keep map and props hidden at these cells
-    gmFogGroup.add(mesh);
+    cells.push([i,j]);
+  }
+  // One instanced draw call for every fog square on the visible layer.
+  if (cells.length) {
+    const material = new THREE.MeshBasicMaterial({
+      color:gm ? 0x544a70 : 0x0b0c17, transparent:gm,
+      opacity:gm ? .52 : 1, depthTest:gm, depthWrite:!gm,
+      side:THREE.DoubleSide
+    });
+    const fog = new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),material,cells.length);
+    const matrix = new THREE.Matrix4(), rotate = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2), scale = new THREE.Vector3(1,1,1);
+    cells.forEach(([i,j],idx) => fog.setMatrixAt(idx,
+      matrix.compose(new THREE.Vector3(i+.5,gm ? .25 : 8,j+.5),rotate,scale)));
+    fog.instanceMatrix.needsUpdate = true;
+    fog.renderOrder = gm ? 8 : 999;
+    fog.frustumCulled = false;
+    gmFogGroup.add(fog);
   }
   scene.add(gmFogGroup);
 }
