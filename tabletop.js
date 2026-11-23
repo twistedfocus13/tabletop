@@ -2680,6 +2680,12 @@ function votfCloseScene(board, notify = true) {
 // ---------- Voice of the Forest: GM-only named checkpoints ----------
 // Backup includes the host's entire persistent state and IndexedDB map/model blobs.
 // Checkpoints are kept separate from the existing game save and never broadcast.
+function votfProgress(task, completed, total, message, status = 'running') {
+  const fraction = Math.max(0, Math.min(1, completed / Math.max(total, 1)));
+  document.dispatchEvent(new CustomEvent('votf:progress', {
+    detail: { task, completed, total, percent: Math.round(100 * fraction), message, status }
+  }));
+}
 const VOTF_CHECKPOINT_INDEX = 'tabletop.votf.checkpoints';
 const VOTF_CHECKPOINT_PREFIX = 'votf:checkpoint:';
 const votfCheckpointIndex = () => store.get(VOTF_CHECKPOINT_INDEX) || [];
@@ -2690,15 +2696,18 @@ function votfCheckpointList() {
 }
 async function votfSnapshot(name, permanent = true) {
   if (!isHost) throw Error('Only the GM can save checkpoints.');
+  votfProgress('checkpoint', 0, 4, 'Capturing scene changes');
   votfCaptureLoadedScenes();
   const persistent = { ...state, maps:{}, players:{} };
   for (const [id,p] of Object.entries(state.players))
     persistent.players[id] = { ...p, online:false };
+  votfProgress('checkpoint', 1, 4, 'Reading saved maps and models');
   const assets = (await blobs.dump()).filter(([key]) => !String(key).startsWith(VOTF_CHECKPOINT_PREFIX));
   const id = 'cp-' + Date.now() + '-' + rid(5);
   const record = { format:'votf-tabletop-checkpoint', version:1, id,
     name:clean(name,90) || 'Campaign checkpoint', at:new Date().toISOString(),
     room:roomCode, state:JSON.parse(JSON.stringify(persistent)), assets };
+  votfProgress('checkpoint', 2, 4, 'Assembling checkpoint');
   if (permanent) {
     await blobs.set(VOTF_CHECKPOINT_PREFIX + id, record);
     const check = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
@@ -2709,6 +2718,7 @@ async function votfSnapshot(name, permanent = true) {
       throw Error('Checkpoint written but its index could not be saved (browser storage full).');
     votfCheckpointList();
   }
+  votfProgress('checkpoint', 4, 4, permanent ? 'Checkpoint verified' : 'Backup snapshot prepared', 'success');
   return record;
 }
 function votfBackupReplacer(key, value) {
@@ -2728,6 +2738,7 @@ function votfBackupReviver(key, value) {
   return bytes.buffer;
 }
 function votfDownloadBackup(record) {
+  votfProgress('export', 0, 2, 'Encoding maps and models');
   const blob = new Blob([JSON.stringify(record, votfBackupReplacer)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2736,6 +2747,7 @@ function votfDownloadBackup(record) {
   document.body.append(a);
   a.click();
   a.remove();
+  votfProgress('export', 2, 2, 'Download requested — check your Downloads folder', 'success');
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 document.addEventListener('votf:checkpoint-create', async e => {
@@ -2744,7 +2756,7 @@ document.addEventListener('votf:checkpoint-create', async e => {
     votfSceneStatus('Saving checkpoint and verifying it…');
     const saved = await votfSnapshot(e.detail?.name || 'Campaign checkpoint');
     votfSceneStatus('Checkpoint saved: ' + saved.name);
-  } catch(err) { votfSceneStatus('Checkpoint failed: ' + err.message); }
+  } catch(err) { votfProgress('checkpoint', 0, 1, 'Checkpoint failed: ' + err.message, 'error'); votfSceneStatus('Checkpoint failed: ' + err.message); }
 });
 document.addEventListener('votf:checkpoint-list', () => {
   if (isHost) votfCheckpointList();
@@ -2756,7 +2768,7 @@ document.addEventListener('votf:checkpoint-export', async () => {
     const record = await votfSnapshot('Exported campaign backup', false);
     votfDownloadBackup(record);
     votfSceneStatus('Backup download requested. Verify the downloaded JSON file before relying on it.');
-  } catch(err) { votfSceneStatus('Backup export failed: ' + err.message); }
+  } catch(err) { votfProgress('export', 0, 1, 'Backup export failed: ' + err.message, 'error'); votfSceneStatus('Backup export failed: ' + err.message); }
 });
 function votfValidateCheckpoint(data) {
   return !!(data && data.format === 'votf-tabletop-checkpoint' && data.version === 1 &&
@@ -2775,19 +2787,25 @@ async function votfRestoreBackup(data) {
   }
   if (!confirm('Restore "' + data.name + '"? The current campaign will be replaced after a safety checkpoint.')) return;
   try {
+    votfProgress('restore', 0, 4, 'Creating recovery safety checkpoint');
     votfSceneStatus('Creating a safety checkpoint before recovery…');
     const safety = await votfSnapshot('Safety before restoring ' + data.name);
+    votfProgress('restore', 1, 4, 'Safety checkpoint verified');
     clearTimeout(saveTimer);
     const existing = await blobs.dump();
     const desired = new Set(data.assets.map(([k]) => k));
+    votfProgress('restore', 2, 4, 'Restoring image and model data');
     for (const [k] of existing) {
       if (!String(k).startsWith(VOTF_CHECKPOINT_PREFIX) && !desired.has(k)) await blobs.set(k,null);
     }
     for (const [key,value] of data.assets) await blobs.set(key,value);
+    votfProgress('restore', 3, 4, 'Restoring saved game state');
     if (!store.set('tabletop.host', { code:data.room || roomCode, state:data.state }))
       throw Error('Restored game state could not be written. See safety checkpoint ' + safety.id);
+    votfProgress('restore', 4, 4, 'Restore written — reloading game', 'success');
     location.reload();
   } catch(err) {
+    votfProgress('restore', 0, 1, 'Restore interrupted: ' + err.message, 'error');
     votfSceneStatus('Restore interrupted: ' + err.message + '. Safety checkpoint remains available.');
   }
 }
@@ -2805,9 +2823,12 @@ document.addEventListener('votf:checkpoint-import', async e => {
     votfSceneStatus('Choose a valid backup JSON file smaller than 250 MB.'); return;
   }
   try {
+    votfProgress('import-backup', 0, 2, 'Reading backup file');
     const data = JSON.parse(await file.text(), votfBackupReviver);
+    votfProgress('import-backup', 2, 2, 'Backup decoded; validating before restore', 'success');
     await votfRestoreBackup(data);
   } catch(err) {
+    votfProgress('import-backup', 0, 1, 'Backup import failed: ' + err.message, 'error');
     votfSceneStatus('Backup import failed: ' + err.message);
   }
 });
@@ -2864,9 +2885,11 @@ document.addEventListener('votf:import-scene', async e => {
     votfSceneStatus('This scene was already imported. Choose Open saved scene instead.'); return;
   }
   // Decode before creating a board, so a bad image leaves no stray layer.
+  votfProgress('map-import', 0, 4, 'Reading original map image');
   let map;
   try { map = await readMap(file); }
   catch { votfSceneStatus('Could not decode this image. No board was created.'); return; }
+  votfProgress('map-import', 1, 4, 'Map decoded; validating dimensions');
   const expectedRatio = cols / rows, actualRatio = map.w / map.h;
   if (Math.abs(expectedRatio - actualRatio) > 0.15) {
     votfSceneStatus('The image shape does not match the scene grid (' + cols + '×' + rows + '). No board was created.');
@@ -2880,11 +2903,13 @@ document.addEventListener('votf:import-scene', async e => {
   if (nextLayer > 20) {
     votfSceneStatus('All 20 tabletop layers are occupied. No scene was imported.'); return;
   }
+  votfProgress('map-import', 2, 4, 'Creating private scene board');
   const newId = handle({ t: 'boardAdd', cols, rows, layer: nextLayer, hidden: false }, clientId);
   if (!newId) { votfSceneStatus('Could not create the new scene board.'); return; }
   handle({ t: 'map', id: newId, map: map.data }, clientId);
   viewLayer(nextLayer);
   pickBoard(newId);
+  votfProgress('map-import', 3, 4, 'Saving scene in Places');
   const before = new Set(Object.keys(state.boardLib || {}));
   handle({ t: 'boardSave', id: newId, name, group: 'Voice of the Forest · Chapter ' + e.detail.chapterId }, clientId);
   const newLib = Object.keys(state.boardLib || {}).find(k => !before.has(k));
@@ -2896,6 +2921,7 @@ document.addEventListener('votf:import-scene', async e => {
   if (board) board.lib = newLib;
   save();
   renderPlaces();
+  votfProgress('map-import', 4, 4, 'Map imported and saved', 'success');
   votfSceneStatus('Imported ' + name + ' to GM layer ' + nextLayer + '. Saved in Places. Players were not moved.');
 });
 
