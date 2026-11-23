@@ -25,3 +25,15 @@ The Chapter 1 scene browser is **development-branch only** until this pull reque
 
 ## Release gate
 Keep PR #1 draft. Test in two browsers and confirm preexisting saved boards and multiplayer still function before merging. No live publication approval has been given.
+
+## Dynamic progress bar checks (new)
+- Open the GM Places panel; no operation progress should be shown until an operation begins.
+- Import a valid Chapter 1 PNG. The bar advances on actual completion of decode, validation, board creation, and saved-place creation (not a fake timed animation), ending at 100%.
+- Create a checkpoint. Progress must reflect capture, asset-read, assembly, and saved checkpoint verification.
+- Export a backup. The bar must show encoding and download-request completion; 100% means the browser was asked to download, **not** that the file has been verified on disk.
+- Import a JSON backup; ensure file decoding is represented before the guarded restoration process begins.
+- Restore with no players connected: ensure safety checkpoint, asset restoration, and state restoration steps update the bar.
+- Test error paths and confirm the bar displays an error rather than remaining misleadingly at a previous successful completion.
+- Confirm the progress label is announced via `aria-live` and the underlying HTML `progress` element is accessible.
+
+**Limitations:** Percentages reflect completed workflow milestones, not precise bytes transferred. Full two-browser regression and recovery testing are still outstanding; keep the PR in draft.
