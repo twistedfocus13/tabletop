@@ -732,6 +732,8 @@
   #r20QuickTools { display:flex; flex-direction:column; gap:3px; padding:6px 3px; background:#151518ee; border:1px solid #39323e; border-radius:12px; box-shadow:0 5px 18px #0008; }
   #r20QuickTools .r20-quick-btn { width:35px; height:36px; flex:none; display:grid; place-items:center; border:1px solid transparent; border-radius:8px; background:#303035; color:#eae3eb; font-family:system-ui,sans-serif; font-size:21px; line-height:1; padding:0; }
   #r20QuickTools .r20-quick-btn:hover, #r20QuickTools .r20-quick-btn:focus-visible { background:#60456a; border-color:#b88cc7; color:#fff; }
+  /* 11-22: the rail sits below the open Places bar (gm-layer-toolbar.js) and scrolls on short screens instead of running off */
+  #gmLayerButtons, #r20QuickTools, #gmLayerPanel { max-height:var(--railMax, 80vh); overflow-y:auto; scrollbar-width:thin; }
   @media (min-width:701px) {
     #r20Dock { height:100%; min-height:100%; flex:1 1 auto; }
   }
@@ -1188,7 +1190,7 @@
 <script type="module" src="tabletop.js?v=113"></script>
 <script defer src="campaigns/voice-of-the-forest/library.js?v=2"></script>
 <script defer src="peeko-chat.js?v=1"></script>
-<script defer src="gm-layer-toolbar.js?v=1"></script>
+<script defer src="gm-layer-toolbar.js?v=2"></script>
 <script defer src="roll20-shell.js?v=1"></script>
 </body>
 </html>
