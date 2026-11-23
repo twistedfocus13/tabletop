@@ -20,7 +20,7 @@ function chatHarness(){
   act:e=>events.push(e),status:()=>{},setTimeout:()=>0
  };
  vm.createContext(ctx);
- vm.runInContext(section('  const sendChat = () => {',"  $('chatSend').onclick = sendChat;"),ctx);
+ vm.runInContext(section('  const sendChat = () => {',"  $('chatSend').onclick = sendChat;")+'\nthis.sendChat=sendChat;',ctx);
  return {send:raw=>{input.value=raw;ctx.sendChat();return events.at(-1);},events,input};
 }
 test('all UI scripts are valid JavaScript',()=>{
