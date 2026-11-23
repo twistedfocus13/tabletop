@@ -397,7 +397,7 @@ function onClientData(msg) {
     case 'boards': state.boards = msg.boards; buildBoard(); updateBoardInputs(); break;
     case 'gmEditVisuals':
       state.gmFog = msg.fog || {}; state.gmLights = msg.lights || [];
-      tilesChanged(); syncFigures(); refreshGmLights();
+      tilesChanged(); syncFigures(); refreshGmFog(); refreshGmLights();
       break;
     case 'tiles':
       if (msg.clear) state.tiles = {};
@@ -965,7 +965,7 @@ function handle(msg, from) {
         set[k] = true;
       }
       if (!Object.keys(set).length) return;
-      tilesChanged(); syncFigures(); resyncPlayers(); save();
+      tilesChanged(); syncFigures(); refreshGmFog(); resyncPlayers(); save();
       break;
     }
     case 'gmLightEdit': {
@@ -1084,6 +1084,17 @@ function handle(msg, from) {
       const set = {};
       for (const [k, t] of Object.entries(L.tiles || {})) { const [i, j] = k.split(',').map(Number); set[(i + b.x) + ',' + (j + b.z)] = t; }
       Object.assign(state.tiles, set);
+      state.gmFog ||= {};
+      for (const key of Object.keys(L.gmFog || {})) {
+        const [i,j] = key.split(',').map(Number);
+        state.gmFog[(i+b.x)+','+(j+b.z)] = true;
+      }
+      state.gmLights ||= [];
+      for (const light of L.gmLights || []) if (state.gmLights.length < 24) {
+        state.gmLights.push({id:rid(8),x:b.x+light.dx,z:b.z+light.dz,
+          radius:light.radius,color:light.color,layer:lay});
+      }
+      refreshGmFog(); refreshGmLights();
       const ids = new Map((L.figs || []).map(f => [f.old, rid(8)]));
       for (const sf of L.figs || []) {
         const { old, dx, dz, ...rest } = sf;
@@ -1127,7 +1138,13 @@ function handle(msg, from) {
           delete state.figures[id]; sendAll({ t:'del', id });
         }
       }
+      for (const key of Object.keys(state.gmFog || {})) {
+        const [i,j] = key.split(',').map(Number);
+        if (boardAt(i+.5,j+.5) === b) delete state.gmFog[key];
+      }
+      state.gmLights = (state.gmLights || []).filter(x => boardAt(x.x,x.z) !== b);
       state.boards = state.boards.filter(x => x !== b);
+      refreshGmFog(); refreshGmLights();
       delete state.maps[b.id]; blobs.set('map:' + b.id, null);
       sendAll({ t: 'map', id: b.id, map: null });
       dropTilesOutside(b);
@@ -2758,7 +2775,14 @@ function votfCaptureScene(board) {
     const { id, x, z, ...rest } = f;
     figs.push({ ...JSON.parse(JSON.stringify(rest)), old:id, dx:x - board.x, dz:z - board.z });
   }
-  Object.assign(template, { cols:board.cols, rows:board.rows, grid:board.grid, tiles, figs });
+  const gmFog = {};
+  for (const key of Object.keys(state.gmFog || {})) {
+    const [i,j] = key.split(',').map(Number);
+    if (boardAt(i+.5,j+.5) === board) gmFog[(i-board.x)+','+(j-board.z)] = true;
+  }
+  const gmLights = (state.gmLights || []).filter(x => boardAt(x.x,x.z) === board)
+    .map(({id,x,z,...rest}) => ({...rest,dx:x-board.x,dz:z-board.z}));
+  Object.assign(template, { cols:board.cols, rows:board.rows, grid:board.grid, tiles, figs, gmFog, gmLights });
 }
 function votfCaptureLoadedScenes() {
   if (!state?.boardLib) return;
@@ -3491,9 +3515,56 @@ function resize() {
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 
+// GM-painted fog is persistent world state. For players the fog is opaque;
+// for the GM it is translucent, allowing secret preparation underneath.
+// Light markers are actual point lights (not merely backdrop shortcuts).
+let gmFogGroup = null, gmLightGroup = null;
+function refreshGmFog() {
+  if (!scene) return;
+  if (gmFogGroup) { scene.remove(gmFogGroup); gmFogGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); }
+  gmFogGroup = new THREE.Group();
+  const gm = isHost && gmView();
+  const mat = new THREE.MeshBasicMaterial({ color:gm ? 0x544a70 : 0x0b0c17,
+    transparent:gm, opacity:gm ? 0.52 : 1, depthWrite:!gm, side:THREE.DoubleSide });
+  for (const key of Object.keys(state.gmFog || {})) {
+    const [i,j] = key.split(',').map(Number), b = boardAt(i+.5,j+.5);
+    if (!b || (isHost ? (gm ? !gmSees(b) : !shown(b)) : !shown(b))) continue;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(i+.5,gm ? 0.25 : 2.8,j+.5);
+    mesh.renderOrder = gm ? 8 : 999;
+    if (!gm) mesh.material = mat; // keep map and props hidden at these cells
+    gmFogGroup.add(mesh);
+  }
+  scene.add(gmFogGroup);
+}
+function refreshGmLights() {
+  if (!scene) return;
+  if (gmLightGroup) {
+    scene.remove(gmLightGroup);
+    gmLightGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  }
+  gmLightGroup = new THREE.Group();
+  for (const light of state.gmLights || []) {
+    const b = boardAt(light.x,light.z);
+    if (!b || (isHost ? (gmView() ? !gmSees(b) : !shown(b)) : !shown(b))) continue;
+    const color = /^#[0-9a-f]{6}$/i.test(light.color || '') ? light.color : '#ffcc82';
+    const radius = Math.max(2,Math.min(12,+light.radius || 5));
+    const point = new THREE.PointLight(color,2.4,radius*2,2);
+    point.position.set(light.x,2.2,light.z);
+    gmLightGroup.add(point);
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(.14,12,8),
+      new THREE.MeshBasicMaterial({color}));
+    marker.position.set(light.x,.35,light.z);
+    marker.userData.gmLight = light.id;
+    gmLightGroup.add(marker);
+  }
+  scene.add(gmLightGroup);
+}
 const mapTextures = new Map();                  // board id -> texture of its map picture
 function buildBoard() {
   if (isHost) computeGaps();
+  refreshGmFog(); refreshGmLights();
   if (!boardGroup) return;
   figsVersion++;
   for (const o of boardGroup.children) { o.geometry?.dispose(); if (o.material && !o.material.map) o.material.dispose(); }
@@ -3714,7 +3785,7 @@ function kit(type) {
   }
   return tileKit[type];
 }
-function tilesChanged() { tilesDirty = true; tilesVersion++; }
+function tilesChanged() { tilesDirty = true; tilesVersion++; refreshGmFog(); }
 function buildTiles() {
   tilesDirty = false;
   if (!tileGroup) { tileGroup = new THREE.Group(); scene.add(tileGroup); }
@@ -3727,6 +3798,7 @@ function buildTiles() {
     // on a random floor, props / events / hidden traps stand on the floor (so a hidden trap's square looks like any other)
     const under = floorUnder(k, t);
     if (under) (byType[under] ||= []).push(k);
+    if ((!isHost || !gmView()) && fogged(k)) continue;
     if (isHost && !gmView() && !tileVisible(k)) continue;
     if (!TILES[t].piece) { (byType[t] ||= []).push(k); continue; }
     const [i, j] = k.split(',').map(Number);
