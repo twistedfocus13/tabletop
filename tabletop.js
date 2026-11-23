@@ -2711,8 +2711,24 @@ async function votfSnapshot(name, permanent = true) {
   }
   return record;
 }
+function votfBackupReplacer(key, value) {
+  const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) :
+    ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
+  if (!bytes) return value;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 16384)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 16384));
+  return { __votfBytes:'base64', data:btoa(binary) };
+}
+function votfBackupReviver(key, value) {
+  if (!value || value.__votfBytes !== 'base64' || typeof value.data !== 'string') return value;
+  const binary = atob(value.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
 function votfDownloadBackup(record) {
-  const blob = new Blob([JSON.stringify(record)], { type:'application/json' });
+  const blob = new Blob([JSON.stringify(record, votfBackupReplacer)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2742,25 +2758,25 @@ document.addEventListener('votf:checkpoint-export', async () => {
     votfSceneStatus('Backup download requested. Verify the downloaded JSON file before relying on it.');
   } catch(err) { votfSceneStatus('Backup export failed: ' + err.message); }
 });
-document.addEventListener('votf:checkpoint-restore', async e => {
-  if (!isHost || !document.body.classList.contains('gm')) return;
+function votfValidateCheckpoint(data) {
+  return !!(data && data.format === 'votf-tabletop-checkpoint' && data.version === 1 &&
+    data.state && Array.isArray(data.state.boards) && data.state.boards.length &&
+    data.state.boardLib && typeof data.state.boardLib === 'object' &&
+    Array.isArray(data.assets) && data.assets.every(entry => Array.isArray(entry) &&
+      entry.length === 2 && typeof entry[0] === 'string' &&
+      /^(map$|map:|boardlib:|model:)/.test(entry[0])));
+}
+async function votfRestoreBackup(data) {
+  if (!votfValidateCheckpoint(data)) {
+    votfSceneStatus('Backup validation failed. Nothing changed.'); return;
+  }
   if ([...conns.values()].some(x => x.conn?.open)) {
-    votfSceneStatus('Disconnect players before restoring a checkpoint.'); return;
+    votfSceneStatus('Disconnect all players before restoring.'); return;
   }
-  const id = String(e.detail?.id || '');
-  if (!votfCheckpointIndex().some(x => x.id === id)) return;
-  const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
-  if (!data || data.format !== 'votf-tabletop-checkpoint' || data.version !== 1 ||
-      !data.state || !Array.isArray(data.state.boards) || !Array.isArray(data.assets) ||
-      !data.assets.every(entry => Array.isArray(entry) && entry.length === 2 &&
-        typeof entry[0] === 'string' && /^(map|boardlib|model):/.test(entry[0]))) {
-    votfSceneStatus('This checkpoint could not be validated. Nothing changed.'); return;
-  }
-  if (!confirm('Restore "' + data.name + '"? The current session will be replaced after saving a safety checkpoint.')) return;
+  if (!confirm('Restore "' + data.name + '"? The current campaign will be replaced after a safety checkpoint.')) return;
   try {
     votfSceneStatus('Creating a safety checkpoint before recovery…');
     const safety = await votfSnapshot('Safety before restoring ' + data.name);
-    // End any pending normal autosave so it cannot overwrite the restored state.
     clearTimeout(saveTimer);
     const existing = await blobs.dump();
     const desired = new Set(data.assets.map(([k]) => k));
@@ -2772,7 +2788,27 @@ document.addEventListener('votf:checkpoint-restore', async e => {
       throw Error('Restored game state could not be written. See safety checkpoint ' + safety.id);
     location.reload();
   } catch(err) {
-    votfSceneStatus('Restore interrupted: ' + err.message + '. Check your safety checkpoint before retrying.');
+    votfSceneStatus('Restore interrupted: ' + err.message + '. Safety checkpoint remains available.');
+  }
+}
+document.addEventListener('votf:checkpoint-restore', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const id = String(e.detail?.id || '');
+  if (!votfCheckpointIndex().some(x => x.id === id)) return;
+  const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
+  await votfRestoreBackup(data);
+});
+document.addEventListener('votf:checkpoint-import', async e => {
+  if (!isHost || !document.body.classList.contains('gm')) return;
+  const file = e.detail?.file;
+  if (!(file instanceof File) || file.size > 250 * 1024 * 1024) {
+    votfSceneStatus('Choose a valid backup JSON file smaller than 250 MB.'); return;
+  }
+  try {
+    const data = JSON.parse(await file.text(), votfBackupReviver);
+    await votfRestoreBackup(data);
+  } catch(err) {
+    votfSceneStatus('Backup import failed: ' + err.message);
   }
 });
 document.addEventListener('votf:checkpoint-delete', async e => {
