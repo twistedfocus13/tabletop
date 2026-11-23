@@ -565,6 +565,22 @@
   #fzList .fzNote { color: var(--dim); font-size: 12px; }
   /* the floor name tag sat where the Places tab hangs: below it for the GM */
   body.gm:not(.previewing) #floorTag { top: 40px; }
+
+  /* Optional Voice of the Forest chapter browser: GM-only, inside Places */
+  .votf-library { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 9px; background: var(--panel2); }
+  .votf-heading { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:7px; flex-wrap:wrap; }
+  .votf-heading span { color:var(--dim); font-size:11px; }
+  .votf-chapters { display:flex; gap:5px; overflow-x:auto; padding-bottom:5px; }
+  .votf-chapters button { flex:0 0 auto; font-size:12px; padding:4px 8px; }
+  .votf-chapters .votf-active { border-color:var(--accent); outline:1px solid var(--accent); }
+  .votf-search { width:100%; margin:5px 0 7px; box-sizing:border-box; }
+  .votf-scene-list { display:flex; gap:7px; overflow-x:auto; padding-bottom:4px; }
+  .votf-scene { display:flex; flex-direction:column; flex:0 0 176px; gap:5px; border:1px solid var(--line); border-radius:7px; padding:8px; }
+  .votf-scene strong { font-size:12px; }
+  .votf-scene small { color:var(--dim); }
+  .votf-scene button { margin-top:auto; font-size:11px; }
+  .votf-notice { color:var(--dim); font-size:11px; margin-top:6px; }
+
 </style>
 </head>
 <body>
@@ -991,5 +1007,6 @@
 } }
 </script>
 <script type="module" src="tabletop.js?v=111"></script>
+<script defer src="campaigns/voice-of-the-forest/library.js?v=1"></script>
 </body>
 </html>
