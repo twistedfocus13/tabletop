@@ -2,7 +2,7 @@
 // Run in GitHub Actions with Playwright. Use a disposable local room only.
 const { test, expect, chromium } = require('@playwright/test');
 const base = process.env.TABLETOP_TEST_URL || 'http://127.0.0.1:8765';
-test.setTimeout(105000);
+test.setTimeout(70000);
 
 test('Roll20 dock keeps a single working chat, dice and player section', async ({page}) => {
   const exceptions = [];
@@ -58,9 +58,23 @@ test('GM and two players share public chat but not each other\'s private whisper
     const guest=await join('Guest Test');
     console.log('[multi] Guest connected');
     const send=async (page,message)=>{
-      await page.locator('[data-r20-tab="chat"]').click();
-      await page.locator('#chatIn').fill(message);
-      await page.locator('#chatSend').click({timeout:12000});
+      const snapshot=await page.evaluate(()=>{
+        const ids=['side','r20Dock','r20Chat','logSec','chatIn','chatSend'];
+        const result={};
+        for(const id of ids){
+          const el=document.getElementById(id);
+          const r=el?.getBoundingClientRect();
+          result[id]={rect:r&&{x:r.x,y:r.y,width:r.width,height:r.height},display:el&&getComputedStyle(el).display,visibility:el&&getComputedStyle(el).visibility};
+        }
+        return result;
+      });
+      console.log('[multi] chat layout '+JSON.stringify(snapshot));
+      console.log('[multi] click Chat tab');
+      await page.locator('[data-r20-tab="chat"]').click({timeout:7000});
+      console.log('[multi] Chat tab selected; filling input');
+      await page.locator('#chatIn').fill(message,{timeout:7000});
+      console.log('[multi] input filled; clicking Send');
+      await page.locator('#chatSend').click({timeout:7000});
       console.log('[multi] sent '+message.slice(0,40)+'; sender log: '+(await page.locator('#log').innerText()).slice(-200));
     };
     const distinctive='public-'+Date.now();
