@@ -581,6 +581,23 @@
   .votf-scene button { margin-top:auto; font-size:11px; }
   .votf-notice { color:var(--dim); font-size:11px; margin-top:6px; }
 
+  /* Voice of the Forest operation status: measured milestones, never a simulated timer */
+  .votf-progress[hidden] { display: none; }
+  .votf-progress { border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0 10px; background:var(--panel); }
+  .votf-progress-label { font-size:12px; margin-bottom:6px; line-height:1.3; }
+  .votf-progress-row { display:flex; align-items:center; gap:8px; }
+  .votf-progress progress { flex:1; display:block; height:12px; min-width:0; accent-color:var(--accent); }
+  .votf-progress-percent { min-width:42px; text-align:right; font-size:12px; font-variant-numeric:tabular-nums; }
+  .votf-progress[data-status="success"] progress { accent-color:#40b881; }
+  .votf-progress[data-status="error"] progress { accent-color:#db625f; }
+  .votf-checkpoints { border-top:1px solid var(--line); padding:9px 0; margin:4px 0 8px; }
+  .votf-checkpoint-actions { display:flex; flex-wrap:wrap; gap:5px; margin:7px 0; }
+  .votf-checkpoint-actions input { flex:1 1 175px; min-width:110px; }
+  .votf-checkpoint-actions button, .votf-checkpoint-row button { font-size:11px; }
+  .votf-checkpoint-list { max-height:150px; overflow:auto; }
+  .votf-checkpoint-row { display:flex; align-items:center; gap:6px; padding:5px 0; border-top:1px solid var(--line); }
+  .votf-checkpoint-row span { flex:1; font-size:11px; }
+
 </style>
 </head>
 <body>
