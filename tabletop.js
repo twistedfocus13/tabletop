@@ -5363,6 +5363,45 @@ function floorAt(e) {
 const canMove = f => f && (gmView() || (!isHost && f.owner === clientId));
 
 let painting = false, paintMode = false, paintType = 'stone', attachFor = null;
+let gmEditMode = 'tokens', gmBrush = 'hide', gmBrushSize = 1, gmLightRadius = 5, gmLightColor = '#ffcc82';
+let gmPainting = false, lastGmPaint = '';
+document.addEventListener('gmtools:mode', e => {
+  if (!isHost || !gmView()) return;
+  gmEditMode = e.detail?.mode || 'tokens';
+  gmPainting = false; painting = false;
+  if (paintMode && gmEditMode !== 'map') { paintMode = false; $('paintBtn')?.classList.remove('on'); $('paintBtn').textContent = 'Paint: off'; }
+  if (moveBoards && gmEditMode !== 'map') { moveBoards = false; $('moveBoards')?.classList.remove('on'); $('moveBoards').textContent = 'Move boards: off'; }
+  document.body.dataset.gmEditMode = gmEditMode;
+});
+document.addEventListener('gmtools:settings', e => {
+  if (!isHost) return;
+  gmBrush = e.detail?.brush === 'reveal' || e.detail?.brush === 'remove' ? e.detail.brush : 'hide';
+  gmBrushSize = Math.max(1,Math.min(5,+e.detail?.size || 1));
+  gmLightRadius = Math.max(2,Math.min(12,+e.detail?.radius || 5));
+  gmLightColor = /^#[0-9a-f]{6}$/i.test(e.detail?.color || '') ? e.detail.color : '#ffcc82';
+});
+function gmPaintAt(e) {
+  const p = floorAt(e);
+  if (!p || !boardAt(p.x,p.z) || layerOf(boardAt(p.x,p.z)) !== gmLayer) return;
+  const i = Math.floor(p.x),j = Math.floor(p.z), keys = [];
+  for (let a = i - gmBrushSize + 1; a <= i + gmBrushSize - 1; a++)
+    for (let b = j - gmBrushSize + 1; b <= j + gmBrushSize - 1; b++)
+      if (Math.abs(a-i)+Math.abs(b-j) < gmBrushSize) keys.push(a + ',' + b);
+  const stamp = keys.join('|') + ':' + gmBrush;
+  if (stamp === lastGmPaint) return;
+  lastGmPaint = stamp;
+  act({ t:'gmFogPaint', keys, hide:gmBrush !== 'reveal' });
+}
+function gmLightAt(e) {
+  const p = floorAt(e);
+  if (!p) return;
+  if (gmBrush === 'remove') {
+    const lights = (state.gmLights || []).filter(x => layerOf(boardAt(x.x,x.z)) === gmLayer);
+    const closest = lights.sort((a,b) => Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];
+    if (closest && Math.hypot(closest.x-p.x,closest.z-p.z) < 2) act({ t:'gmLightEdit',remove:closest.id });
+  } else act({ t:'gmLightEdit',x:Math.floor(p.x)+.5,z:Math.floor(p.z)+.5,
+    radius:gmLightRadius,color:gmLightColor });
+}
 let moveBoards = false, boardDrag = null, selBoard = 'b1';
 function paintAt(e) {
   const p = floorAt(e), k = p && cellAt(p);
@@ -5383,6 +5422,17 @@ function onDown(e) {
     return;                                     // the camera still turns if you drag
   }
   if (e.button !== 0 || e.target !== renderer.domElement) return;
+  if (isHost && gmView() && gmEditMode === 'fog') {
+    e.stopPropagation(); gmPainting = true; lastGmPaint = ''; gmPaintAt(e); return;
+  }
+  if (isHost && gmView() && gmEditMode === 'light') {
+    e.stopPropagation(); gmLightAt(e); return;
+  }
+  if (isHost && gmView() && gmEditMode === 'map' && !paintMode && !moveBoards) {
+    const p = floorAt(e), b = p && boardAt(p.x,p.z);
+    if (b) { e.stopPropagation(); pickBoard(b.id); }
+    return;
+  }
   if (areaDraft) {
     e.stopPropagation();
     const p = floorAt(e);
@@ -5461,6 +5511,7 @@ function onDown(e) {
 }
 
 function onMove(e) {
+  if (gmPainting) { gmPaintAt(e); return; }
   if (painting) { paintAt(e); return; }
   if (boardDrag) {
     const p = floorAt(e), b = state.boards.find(x => x.id === boardDrag.id);
@@ -5494,6 +5545,7 @@ function onUp(e) {
     if (Math.hypot(e.clientX - rightClick.x, e.clientY - rightClick.y) < 6) { act({ t: 'edit', id: rightClick.id, turn: true }); select(rightClick.id); }
     rightClick = null;
   }
+  gmPainting = false; lastGmPaint = '';
   painting = false; boardDrag = null;
   const cm = clickMove; clickMove = null;
   if (cm && e && Math.hypot(e.clientX - cm.x, e.clientY - cm.y) < 6 && cm.p && state.figures[cm.id]) {   // didn't pan the camera: move
@@ -5530,6 +5582,7 @@ function keyboardMini() {
   return null;
 }
 addEventListener('keydown', e => {
+  if (isHost && gmEditMode !== 'tokens' && gmEditMode !== 'gm') return;
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || preview ||
       e.target?.isContentEditable || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target?.tagName) ||
       $('game').style.display !== 'block' || painting || moveBoards || dragging || attackFor || attachFor || itemFor) return;
