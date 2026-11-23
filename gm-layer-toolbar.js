@@ -9,12 +9,16 @@
     { id:"gm", label:"GM", icon:"♛", help:"Prepare secret NPCs and hidden areas. Use Hide / Reveal on the selected mini." },
     { id:"map", label:"Map", icon:"▧", help:"Import a map picture, edit terrain, or move board geometry." },
     { id:"layers", label:"Layers", icon:"▱", help:"Switch GM scene layers. Moving players requires your confirmation." },
-    { id:"fog", label:"Fog", icon:"◌", help:"Manage the existing dungeon fog and room reveal rules." },
-    { id:"light", label:"Light", icon:"☼", help:"Choose the tabletop ambience and background. Dynamic light sources are not yet supported." }
+    { id:"fog", label:"Fog", icon:"◌", help:"Paint dark fog directly onto the map. Left-drag hides or reveals grid squares only on the selected GM layer." },
+    { id:"light", label:"Light", icon:"☼", help:"Click on the map to place glowing light sources, or remove existing ones. Choose range and color below." }
   ];
   const byId = id => document.getElementById(id);
   let mode = "tokens";
   let boardMoveActive = false;
+  const editing = { brush:"hide", size:1, radius:5, color:"#ffcc82" };
+  function syncSettings() {
+    document.dispatchEvent(new CustomEvent("gmtools:settings", {detail:{...editing}}));
+  }
   const make = (tag, className, label) => {
     const el = document.createElement(tag);
     if (className) el.className = className;
@@ -89,12 +93,42 @@
         tool("Move players here…", () => { useTab("boards"); nativeClick("layerLive"); renderPanel(); }, "Native GM confirmation is required")
       );
     } else if (mode === "fog") {
+      const picker = make("select","gm-layer-select");
+      picker.setAttribute("aria-label","Fog brush mode");
+      for (const [value,label] of [["hide","Paint fog (hide)"],["reveal","Erase fog (reveal)"]]) {
+        const opt = make("option","",label); opt.value=value; picker.append(opt);
+      }
+      if (!["hide","reveal"].includes(editing.brush)) editing.brush="hide";
+      picker.value=editing.brush;
+      picker.addEventListener("change",()=>{ editing.brush=picker.value; syncSettings(); });
+      const sizeLabel=make("label","gm-layer-field","Brush size (1–5)");
+      const size=make("input","gm-layer-select");
+      size.type="range"; size.min="1"; size.max="5"; size.step="1"; size.value=editing.size;
+      size.addEventListener("input",()=>{editing.size=+size.value;sizeLabel.textContent="Brush size: "+editing.size;syncSettings();});
+      sizeLabel.textContent="Brush size: "+editing.size;
+      panel.append(picker,sizeLabel,size);
       actions.append(
-        tool("Dungeon settings", () => useTab("floors")),
-        tool("Reveal whole floor…", () => { useTab("floors"); nativeClick("floorShow"); }, "Existing reveal action will ask for confirmation"),
-        tool("Fog / terrain tools", () => useTab("terrain"))
+        tool("Dungeon fog settings",()=>useTab("floors")),
+        tool("Reveal whole dungeon floor…",()=>{useTab("floors");nativeClick("floorShow");})
       );
     } else if (mode === "light") {
+      const brush=make("select","gm-layer-select");
+      brush.setAttribute("aria-label","Light tool");
+      for (const [value,label] of [["hide","Place light"],["remove","Remove nearest light"]]) {
+        const opt=make("option","",label); opt.value=value; brush.append(opt);
+      }
+      if (!["hide","remove"].includes(editing.brush)) editing.brush="hide";
+      brush.value=editing.brush;
+      brush.addEventListener("change",()=>{editing.brush=brush.value;syncSettings();});
+      const radiusLabel=make("label","gm-layer-field","Light radius: "+editing.radius);
+      const radius=make("input","gm-layer-select");
+      radius.type="range"; radius.min="2"; radius.max="12"; radius.step="1"; radius.value=editing.radius;
+      radius.addEventListener("input",()=>{editing.radius=+radius.value;radiusLabel.textContent="Light radius: "+editing.radius;syncSettings();});
+      const colorLabel=make("label","gm-layer-field","Light color");
+      const color=make("input","gm-layer-select");
+      color.type="color";color.value=editing.color;
+      color.addEventListener("input",()=>{editing.color=color.value;syncSettings();});
+      panel.append(brush,radiusLabel,radius,colorLabel,color);
       const caption = make("label", "gm-layer-field", "Scene ambience");
       const source = byId("bgPick"), select = make("select", "gm-layer-select");
       select.setAttribute("aria-label", "Tabletop ambience");
@@ -119,6 +153,10 @@
   function chooseMode(id) {
     if (!modes.some(x => x.id === id)) return;
     mode = id;
+    // All canvas clicks are now governed by the active editing mode.
+    if (id === "fog" || id === "light") editing.brush = "hide";
+    document.dispatchEvent(new CustomEvent("gmtools:mode",{detail:{mode:id}}));
+    syncSettings();
     for (const btn of document.querySelectorAll("#gmLayerToolbar [data-layer-mode]")) {
       btn.classList.toggle("active", btn.dataset.layerMode === id);
       btn.setAttribute("aria-pressed", String(btn.dataset.layerMode === id));
@@ -158,6 +196,8 @@
       btn.setAttribute("aria-pressed", String(btn.dataset.layerMode === mode));
     }
     renderPanel();
+    syncSettings();
+    // Initial Tokens mode is applied on GM room entry, not while the lobby is open.
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once:true });
   else init();
