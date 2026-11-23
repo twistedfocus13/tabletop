@@ -11,7 +11,7 @@ on:
       - '.github/workflows/roll20-browser.yml'
 jobs:
   browser-acceptance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     permissions:
       contents: read
