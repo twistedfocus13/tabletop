@@ -145,7 +145,7 @@ function freshState() {
     combat: null, rules: { diag: 'one', limit: true, autoReveal: true }, explored: 0,
     pending: [], event: null, threat: 0, paused: false,                       // GM-only: events waiting / shown
     attack: null, warp: null, warpUsed: {}, library: {}, boardLib: {},       // attack in progress, warp-out vote, GM's saved minis and boards
-    areas: {},                                                               // area shapes on the table (burst / cone / line)
+    areas: {}, gmFog: {}, gmLights: [],                                      // independent GM-drawn fog and placed lights
     dungeon: null, bag: {}, fog: null, live: 1, prep: {}, bg: '' };   // live = the layer the team is on; prep = random floors waiting on other layers          // fog = the random floor's squares players haven't seen yet (host only)                                               // bag = the team's items: name -> how many                                                         // the random dungeon: name, floor number, settings, its board
 }
 
@@ -256,12 +256,23 @@ function connectToHost() {
 }
 
 // host: what a player is allowed to see (hidden minis are GM-only)
+function playerGmFog() {
+  const out = {};
+  for (const k of Object.keys(state.gmFog || {})) {
+    const [i,j] = k.split(',').map(Number);
+    if (shown(boardAt(i + .5,j + .5))) out[k] = true;
+  }
+  return out;
+}
+function playerGmLights() {
+  return (state.gmLights || []).filter(x => shown(boardAt(x.x,x.z))).map(x => ({ ...x }));
+}
 function viewFor() {
   const figures = {}, tiles = {};
   for (const f of Object.values(state.figures)) if (figVisible(f)) figures[f.id] = f;
   for (const [k, t] of Object.entries(state.tiles)) { const v = playerTile(k, t); if (v) tiles[k] = v; }
   return { boards: state.boards.filter(shown), figures, players: state.players, log: state.log.filter(l => !l.to), gm: state.gm,
-    models: state.models, tiles, combat: combatView(), rules: state.rules, explored: state.explored, party: state.party, pending: [], event: null, threat: 0, paused: state.paused,
+    models: state.models, tiles, gmFog: playerGmFog(), gmLights: playerGmLights(), combat: combatView(), rules: state.rules, explored: state.explored, party: state.party, pending: [], event: null, threat: 0, paused: state.paused,
     attack: state.attack, warp: state.warp, ending: state.ending || null, warpUsed: {}, library: {}, boardLib: {}, areas: areasView(), dungeon: state.dungeon, bg: state.bg || '', bag: state.bag, siteBag: state.siteBag || [] };
 }
 // layers: each board sits on one (far apart on the table); players only ever see the team's layer, the GM looks at one at a time
@@ -272,7 +283,7 @@ const shown = b => !!b && !b.hidden && layerOf(b) === (state.live || 1);
 const offView = b => !!b && !shown(b);
 const gmSees = b => !b || layerOf(b) === gmLayer;
 // a random floor's rooms and corridors stay dark to players until an ally gets there (fog.hid: square -> room number, -1 = corridor or wall)
-const fogged = k => state.fog?.hid[k] != null;
+const fogged = k => state.fog?.hid[k] != null || !!state.gmFog?.[k];
 const figVisible = f => !f.hidden && !offView(boardAt(f.x, f.z)) && (!!f.owner || f.side === 'player' || !fogged(Math.floor(f.x) + ',' + Math.floor(f.z)));   // the team's own minis never vanish into the dark
 const tileVisible = k => { const [i, j] = k.split(',').map(Number); return state.tiles[k] !== 'hiddenTrap' && !offView(boardAt(i + 0.5, j + 0.5)) && !fogged(k); };
 // what players get for a square: a hidden trap on a random floor looks like the floor round it, an unseen square is darkness
@@ -313,6 +324,7 @@ function resyncPlayers() {
   sendAll({ t: 'boards', boards: v.boards });
   for (const b of v.boards) if (state.maps[b.id]) sendAll({ t: 'map', id: b.id, map: state.maps[b.id] });
   sendAll({ t: 'tiles', set: v.tiles, clear: true });
+  sendAll({ t: 'gmEditVisuals', fog: v.gmFog, lights: v.gmLights });
   sendAll({ t: 'figs', figures: v.figures });
   sendAll({ t: 'combat', combat: v.combat });
   if (isHost && checkLurkers()) pushCombat();
@@ -383,6 +395,10 @@ function onClientData(msg) {
     case 'jumpFx': if (typeof msg.id === 'string') startMiniJump(msg.id); break;
     case 'del': delete state.figures[msg.id]; removeFigMesh(msg.id); renderHud(); break;
     case 'boards': state.boards = msg.boards; buildBoard(); updateBoardInputs(); break;
+    case 'gmEditVisuals':
+      state.gmFog = msg.fog || {}; state.gmLights = msg.lights || [];
+      tilesChanged(); syncFigures(); refreshGmFog(); refreshGmLights();
+      break;
     case 'tiles':
       if (msg.clear) state.tiles = {};
       Object.assign(state.tiles, msg.set || {});
@@ -936,6 +952,40 @@ function handle(msg, from) {
       pushFig(f); save();
       break;
     }
+    case 'gmFogPaint': {
+      if (!gm) return;
+      const set = {};
+      for (const k of (Array.isArray(msg.keys) ? msg.keys : []).slice(0,121)) {
+        if (!/^-?\d+,-?\d+$/.test(k)) continue;
+        const [i,j] = k.split(',').map(Number);
+        const b = boardAt(i + 0.5,j + 0.5);
+        if (!b || layerOf(b) !== gmLayer) continue;
+        state.gmFog ||= {};
+        if (msg.hide) state.gmFog[k] = true; else delete state.gmFog[k];
+        set[k] = true;
+      }
+      if (!Object.keys(set).length) return;
+      tilesChanged(); syncFigures(); refreshGmFog(); resyncPlayers(); save();
+      break;
+    }
+    case 'gmLightEdit': {
+      if (!gm) return;
+      state.gmLights ||= [];
+      if (msg.remove) {
+        const idx = state.gmLights.findIndex(x => x.id === msg.remove);
+        if (idx < 0) return;
+        state.gmLights.splice(idx,1);
+      } else {
+        const x = +msg.x,z = +msg.z, radius = Math.max(2,Math.min(12,+msg.radius||5));
+        if (!Number.isFinite(x) || !Number.isFinite(z) || state.gmLights.length >= 24) return;
+        const b = boardAt(x,z);
+        if (!b || layerOf(b) !== gmLayer) return;
+        const color = /^#[0-9a-f]{6}$/i.test(msg.color || '') ? msg.color : '#ffcc82';
+        state.gmLights.push({id:rid(8),x,z,radius,color,layer:layerOf(b)});
+      }
+      refreshGmLights(); resyncPlayers(); save();
+      break;
+    }
     case 'tiles': {
       if (!gm) return;
       const set = {};
@@ -993,12 +1043,25 @@ function handle(msg, from) {
         if (inside(i + 0.5, j + 0.5)) { moved[(i + dx) + ',' + (j + dz)] = t; set[k] = null; delete state.tiles[k]; }
       }
       Object.assign(state.tiles, moved); Object.assign(set, moved);
+      // Fog squares and placed lights stay attached to a moved map board.
+      const shiftedFog = {};
+      for (const k of Object.keys(state.gmFog || {})) {
+        const [i,j] = k.split(',').map(Number);
+        if (!inside(i + .5,j + .5)) continue;
+        shiftedFog[(i + dx) + ',' + (j + dz)] = true;
+        delete state.gmFog[k];
+      }
+      Object.assign(state.gmFog,shiftedFog);
+      for (const light of state.gmLights || []) if (inside(light.x,light.z)) {
+        light.x += dx;light.z += dz;
+      }
       const riders = Object.values(state.figures).filter(f => inside(f.x, f.z) && !(f.parent && state.figures[f.parent] && inside(state.figures[f.parent].x, state.figures[f.parent].z)));
       b.x += dx; b.z += dz;
       for (const f of riders) { f.x += dx; f.z += dz; pushFig(f); carry(f.id, dx, dz, 0, f); }
-      tilesChanged();
+      tilesChanged(); refreshGmFog(); refreshGmLights();
       sendTiles(set);
       boardsChanged();
+      resyncPlayers();
       break;
     }
     case 'boardSave': {                         // GM: keep a copy of a board (size, grid, picture, terrain, GM minis on it) in a labelled group
@@ -1015,8 +1078,15 @@ function handle(msg, from) {
         const { id: fid, x, z, ...rest } = f;
         figs.push({ ...JSON.parse(JSON.stringify(rest)), old: fid, dx: x - b.x, dz: z - b.z });
       }
+      const gmFog = {};
+      for (const k of Object.keys(state.gmFog || {})) {
+        const [i,j] = k.split(',').map(Number);
+        if (boardAt(i+.5,j+.5) === b) gmFog[(i-b.x)+','+(j-b.z)] = true;
+      }
+      const gmLights = (state.gmLights || []).filter(x => boardAt(x.x,x.z) === b)
+        .map(({id,x,z,...rest}) => ({...rest,dx:x-b.x,dz:z-b.z}));
       state.boardLib[id] = { name: clean(msg.name, 40) || `Board ${b.cols}x${b.rows}`, group: clean(msg.group, 30) || 'Ungrouped',
-        cols: b.cols, rows: b.rows, grid: b.grid, tiles, figs, map: !!state.maps[b.id] };
+        cols: b.cols, rows: b.rows, grid: b.grid, tiles, figs, gmFog, gmLights, map: !!state.maps[b.id] };
       if (state.maps[b.id]) blobs.set('boardlib:' + id, state.maps[b.id]);
       renderBoardLib(); save();
       note(from, `Saved "${state.boardLib[id].name}" in ${state.boardLib[id].group}.`);
@@ -1034,6 +1104,17 @@ function handle(msg, from) {
       const set = {};
       for (const [k, t] of Object.entries(L.tiles || {})) { const [i, j] = k.split(',').map(Number); set[(i + b.x) + ',' + (j + b.z)] = t; }
       Object.assign(state.tiles, set);
+      state.gmFog ||= {};
+      for (const key of Object.keys(L.gmFog || {})) {
+        const [i,j] = key.split(',').map(Number);
+        state.gmFog[(i+b.x)+','+(j+b.z)] = true;
+      }
+      state.gmLights ||= [];
+      for (const light of L.gmLights || []) if (state.gmLights.length < 24) {
+        state.gmLights.push({id:rid(8),x:b.x+light.dx,z:b.z+light.dz,
+          radius:light.radius,color:light.color,layer:lay});
+      }
+      refreshGmFog(); refreshGmLights();
       const ids = new Map((L.figs || []).map(f => [f.old, rid(8)]));
       for (const sf of L.figs || []) {
         const { old, dx, dz, ...rest } = sf;
@@ -1077,7 +1158,13 @@ function handle(msg, from) {
           delete state.figures[id]; sendAll({ t:'del', id });
         }
       }
+      for (const key of Object.keys(state.gmFog || {})) {
+        const [i,j] = key.split(',').map(Number);
+        if (boardAt(i+.5,j+.5) === b) delete state.gmFog[key];
+      }
+      state.gmLights = (state.gmLights || []).filter(x => boardAt(x.x,x.z) !== b);
       state.boards = state.boards.filter(x => x !== b);
+      refreshGmFog(); refreshGmLights();
       delete state.maps[b.id]; blobs.set('map:' + b.id, null);
       sendAll({ t: 'map', id: b.id, map: null });
       dropTilesOutside(b);
@@ -2708,7 +2795,14 @@ function votfCaptureScene(board) {
     const { id, x, z, ...rest } = f;
     figs.push({ ...JSON.parse(JSON.stringify(rest)), old:id, dx:x - board.x, dz:z - board.z });
   }
-  Object.assign(template, { cols:board.cols, rows:board.rows, grid:board.grid, tiles, figs });
+  const gmFog = {};
+  for (const key of Object.keys(state.gmFog || {})) {
+    const [i,j] = key.split(',').map(Number);
+    if (boardAt(i+.5,j+.5) === board) gmFog[(i-board.x)+','+(j-board.z)] = true;
+  }
+  const gmLights = (state.gmLights || []).filter(x => boardAt(x.x,x.z) === board)
+    .map(({id,x,z,...rest}) => ({...rest,dx:x-board.x,dz:z-board.z}));
+  Object.assign(template, { cols:board.cols, rows:board.rows, grid:board.grid, tiles, figs, gmFog, gmLights });
 }
 function votfCaptureLoadedScenes() {
   if (!state?.boardLib) return;
@@ -3441,9 +3535,69 @@ function resize() {
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 
+// GM-painted fog is persistent world state. For players the fog is opaque;
+// for the GM it is translucent, allowing secret preparation underneath.
+// Light markers are actual point lights (not merely backdrop shortcuts).
+let gmFogGroup = null, gmLightGroup = null;
+function refreshGmFog() {
+  if (!scene) return;
+  if (gmFogGroup) {
+    scene.remove(gmFogGroup);
+    gmFogGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  }
+  gmFogGroup = new THREE.Group();
+  const gm = isHost && gmView(), cells = [];
+  for (const key of Object.keys(state.gmFog || {})) {
+    const [i,j] = key.split(',').map(Number), b = boardAt(i+.5,j+.5);
+    if (!b || (isHost ? (gm ? !gmSees(b) : !shown(b)) : !shown(b))) continue;
+    cells.push([i,j]);
+  }
+  // One instanced draw call for every fog square on the visible layer.
+  if (cells.length) {
+    const material = new THREE.MeshBasicMaterial({
+      color:gm ? 0x544a70 : 0x0b0c17, transparent:gm,
+      opacity:gm ? .52 : 1, depthTest:gm, depthWrite:false,
+      side:THREE.DoubleSide
+    });
+    const fog = new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),material,cells.length);
+    const matrix = new THREE.Matrix4(), rotate = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2), scale = new THREE.Vector3(1,1,1);
+    cells.forEach(([i,j],idx) => fog.setMatrixAt(idx,
+      matrix.compose(new THREE.Vector3(i+.5,gm ? .25 : .16,j+.5),rotate,scale)));
+    fog.instanceMatrix.needsUpdate = true;
+    fog.renderOrder = gm ? 8 : 999;
+    fog.frustumCulled = false;
+    gmFogGroup.add(fog);
+  }
+  scene.add(gmFogGroup);
+}
+function refreshGmLights() {
+  if (!scene) return;
+  if (gmLightGroup) {
+    scene.remove(gmLightGroup);
+    gmLightGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  }
+  gmLightGroup = new THREE.Group();
+  for (const light of state.gmLights || []) {
+    const b = boardAt(light.x,light.z);
+    if (!b || (isHost ? (gmView() ? !gmSees(b) : !shown(b)) : !shown(b))) continue;
+    const color = /^#[0-9a-f]{6}$/i.test(light.color || '') ? light.color : '#ffcc82';
+    const radius = Math.max(2,Math.min(12,+light.radius || 5));
+    const point = new THREE.PointLight(color,2.4,radius*2,2);
+    point.position.set(light.x,2.2,light.z);
+    gmLightGroup.add(point);
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(.14,12,8),
+      new THREE.MeshBasicMaterial({color}));
+    marker.position.set(light.x,.35,light.z);
+    marker.userData.gmLight = light.id;
+    gmLightGroup.add(marker);
+  }
+  scene.add(gmLightGroup);
+}
 const mapTextures = new Map();                  // board id -> texture of its map picture
 function buildBoard() {
   if (isHost) computeGaps();
+  refreshGmFog(); refreshGmLights();
   if (!boardGroup) return;
   figsVersion++;
   for (const o of boardGroup.children) { o.geometry?.dispose(); if (o.material && !o.material.map) o.material.dispose(); }
@@ -3664,7 +3818,7 @@ function kit(type) {
   }
   return tileKit[type];
 }
-function tilesChanged() { tilesDirty = true; tilesVersion++; }
+function tilesChanged() { tilesDirty = true; tilesVersion++; refreshGmFog(); }
 function buildTiles() {
   tilesDirty = false;
   if (!tileGroup) { tileGroup = new THREE.Group(); scene.add(tileGroup); }
@@ -3677,6 +3831,7 @@ function buildTiles() {
     // on a random floor, props / events / hidden traps stand on the floor (so a hidden trap's square looks like any other)
     const under = floorUnder(k, t);
     if (under) (byType[under] ||= []).push(k);
+    if ((!isHost || !gmView()) && fogged(k)) continue;
     if (isHost && !gmView() && !tileVisible(k)) continue;
     if (!TILES[t].piece) { (byType[t] ||= []).push(k); continue; }
     const [i, j] = k.split(',').map(Number);
@@ -5313,6 +5468,47 @@ function floorAt(e) {
 const canMove = f => f && (gmView() || (!isHost && f.owner === clientId));
 
 let painting = false, paintMode = false, paintType = 'stone', attachFor = null;
+let gmEditMode = 'tokens', gmBrush = 'hide', gmBrushSize = 1, gmLightRadius = 5, gmLightColor = '#ffcc82';
+let gmPainting = false, lastGmPaint = '', lastGmPaintAt = 0;
+document.addEventListener('gmtools:mode', e => {
+  if (!isHost || !gmView()) return;
+  gmEditMode = e.detail?.mode || 'tokens';
+  gmPainting = false; painting = false;
+  if (paintMode && gmEditMode !== 'map') { paintMode = false; $('paintBtn')?.classList.remove('on'); $('paintBtn').textContent = 'Paint: off'; }
+  if (moveBoards && gmEditMode !== 'map') { moveBoards = false; $('moveBoards')?.classList.remove('on'); $('moveBoards').textContent = 'Move boards: off'; }
+  document.body.dataset.gmEditMode = gmEditMode;
+});
+document.addEventListener('gmtools:settings', e => {
+  if (!isHost) return;
+  gmBrush = e.detail?.brush === 'reveal' || e.detail?.brush === 'remove' ? e.detail.brush : 'hide';
+  gmBrushSize = Math.max(1,Math.min(5,+e.detail?.size || 1));
+  gmLightRadius = Math.max(2,Math.min(12,+e.detail?.radius || 5));
+  gmLightColor = /^#[0-9a-f]{6}$/i.test(e.detail?.color || '') ? e.detail.color : '#ffcc82';
+});
+function gmPaintAt(e) {
+  const p = floorAt(e);
+  if (!p || !boardAt(p.x,p.z) || layerOf(boardAt(p.x,p.z)) !== gmLayer) return;
+  const i = Math.floor(p.x),j = Math.floor(p.z), keys = [];
+  for (let a = i - gmBrushSize + 1; a <= i + gmBrushSize - 1; a++)
+    for (let b = j - gmBrushSize + 1; b <= j + gmBrushSize - 1; b++)
+      if (Math.abs(a-i)+Math.abs(b-j) < gmBrushSize) keys.push(a + ',' + b);
+  const stamp = keys.join('|') + ':' + gmBrush;
+  const now = performance.now();
+  if (stamp === lastGmPaint || (now - lastGmPaintAt < 55 && gmPainting)) return;
+  lastGmPaint = stamp;
+  lastGmPaintAt = now;
+  act({ t:'gmFogPaint', keys, hide:gmBrush !== 'reveal' });
+}
+function gmLightAt(e) {
+  const p = floorAt(e);
+  if (!p) return;
+  if (gmBrush === 'remove') {
+    const lights = (state.gmLights || []).filter(x => layerOf(boardAt(x.x,x.z)) === gmLayer);
+    const closest = lights.sort((a,b) => Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];
+    if (closest && Math.hypot(closest.x-p.x,closest.z-p.z) < 2) act({ t:'gmLightEdit',remove:closest.id });
+  } else act({ t:'gmLightEdit',x:Math.floor(p.x)+.5,z:Math.floor(p.z)+.5,
+    radius:gmLightRadius,color:gmLightColor });
+}
 let moveBoards = false, boardDrag = null, selBoard = 'b1';
 function paintAt(e) {
   const p = floorAt(e), k = p && cellAt(p);
@@ -5333,6 +5529,19 @@ function onDown(e) {
     return;                                     // the camera still turns if you drag
   }
   if (e.button !== 0 || e.target !== renderer.domElement) return;
+  if (isHost && gmView() && gmEditMode === 'fog') {
+    e.stopPropagation(); gmPainting = true; lastGmPaint = ''; gmPaintAt(e); return;
+  }
+  if (isHost && gmView() && gmEditMode === 'light') {
+    e.stopPropagation(); gmLightAt(e); return;
+  }
+  if (isHost && gmView() && gmEditMode === 'map' && !paintMode && !moveBoards) {
+    const p = floorAt(e), b = p && boardAt(p.x,p.z);
+    if (b) { e.stopPropagation(); pickBoard(b.id); }
+    return;
+  }
+  // The Layers tool is navigation only: never move a mini by accident.
+  if (isHost && gmView() && gmEditMode === 'layers') return;
   if (areaDraft) {
     e.stopPropagation();
     const p = floorAt(e);
@@ -5382,6 +5591,13 @@ function onDown(e) {
     return;
   }
   const id = figAt(e);
+  if (isHost && gmView() && id) {
+    const candidate = state.figures[id];
+    // In Tokens mode, secret GM-only pieces cannot be manipulated.
+    if (gmEditMode === 'tokens' && candidate?.hidden) { e.stopPropagation(); return; }
+    // In GM mode, player-owned minis are locked; secret NPCs remain editable.
+    if (gmEditMode === 'gm' && candidate?.owner) { e.stopPropagation(); return; }
+  }
   if (!id) {                                    // a click (not a drag) on a square sends the selected mini there (Adam)
     let sel = selectedId && state.figures[selectedId];
     // players: with nothing (or someone else) picked, the click moves their own mini, no need to pick it every time (Adam)
@@ -5411,6 +5627,7 @@ function onDown(e) {
 }
 
 function onMove(e) {
+  if (gmPainting) { gmPaintAt(e); return; }
   if (painting) { paintAt(e); return; }
   if (boardDrag) {
     const p = floorAt(e), b = state.boards.find(x => x.id === boardDrag.id);
@@ -5444,6 +5661,7 @@ function onUp(e) {
     if (Math.hypot(e.clientX - rightClick.x, e.clientY - rightClick.y) < 6) { act({ t: 'edit', id: rightClick.id, turn: true }); select(rightClick.id); }
     rightClick = null;
   }
+  gmPainting = false; lastGmPaint = '';
   painting = false; boardDrag = null;
   const cm = clickMove; clickMove = null;
   if (cm && e && Math.hypot(e.clientX - cm.x, e.clientY - cm.y) < 6 && cm.p && state.figures[cm.id]) {   // didn't pan the camera: move
@@ -5480,6 +5698,9 @@ function keyboardMini() {
   return null;
 }
 addEventListener('keydown', e => {
+  if (isHost && gmEditMode !== 'tokens' && gmEditMode !== 'gm') return;
+  if (isHost && gmEditMode === 'tokens' && selectedId && state.figures[selectedId]?.hidden) return;
+  if (isHost && gmEditMode === 'gm' && selectedId && state.figures[selectedId]?.owner) return;
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || preview ||
       e.target?.isContentEditable || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target?.tagName) ||
       $('game').style.display !== 'block' || painting || moveBoards || dragging || attackFor || attachFor || itemFor) return;
@@ -6055,6 +6276,10 @@ function enterGame() {
   $('whoAmI').textContent = isHost ? `You are the GM (${myName}). You can move everything.` : `You are ${myName}. You can move your own mini (white ring).`;
   if (!renderer) { initView(); wirePanel(); }
   rebuildAll();
+  if (isHost) {
+    const active = document.querySelector('#gmLayerToolbar [data-layer-mode].active');
+    if (active) document.dispatchEvent(new CustomEvent('gmtools:mode', {detail:{mode:active.dataset.layerMode}}));
+  }
   if (!isHost && !selectedId) { const own = myMini(); if (own) select(own.id); }   // players start with their own mini picked
 }
 
