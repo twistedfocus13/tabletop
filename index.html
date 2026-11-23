@@ -740,6 +740,18 @@
     #r20QuickTools .r20-quick-btn { width:30px; height:31px; font-size:18px; }
   }
 
+
+  /* Spacious sidebar like the reference, while preserving the native resize grip. */
+  :root { --sideW:370px; }
+  @media (min-width:701px) {
+    body:not(.gm) #side, body.previewing #side { width:370px; }
+    body:not(.gm) #view, body.previewing #view { right:370px; }
+    body:not(.gm) #prompts, body.previewing #prompts { right:370px; }
+    body:not(.gm) #toggleSide, body.previewing #toggleSide { right:380px; }
+    body:not(.gm) #ctrlBtn, body.previewing #ctrlBtn { right:432px; }
+    body:not(.gm) #turnBox, body.previewing #turnBox { right:562px; }
+  }
+
 </style>
 </head>
 <body>
