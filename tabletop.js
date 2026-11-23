@@ -337,6 +337,9 @@ function resyncPlayers() {
   sendAll({ t: 'tiles', set: v.tiles, clear: true });
   sendAll({ t: 'gmEditVisuals', fog: v.gmFog, lights: v.gmLights });
   sendAll({ t: 'figs', figures: v.figures });
+  // Reconcile overlays too: an area drawn on the previous scene must not
+  // remain on a player's screen after a layer or visibility change.
+  sendAll({ t: 'areas', areas: v.areas });
   sendAll({ t: 'combat', combat: v.combat });
   if (isHost && checkLurkers()) pushCombat();
 }
