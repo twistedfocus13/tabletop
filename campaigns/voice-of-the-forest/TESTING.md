@@ -37,3 +37,13 @@ Keep PR #1 draft. Test in two browsers and confirm preexisting saved boards and 
 - Confirm the progress label is announced via `aria-live` and the underlying HTML `progress` element is accessible.
 
 **Limitations:** Percentages reflect completed workflow milestones, not precise bytes transferred. Full two-browser regression and recovery testing are still outstanding; keep the PR in draft.
+
+## Keyboard movement / jump controls
+- Select a movable mini and press arrow keys or WASD. Each key press should request exactly one grid square through the existing authoritative `move` action.
+- Hold a direction: repeat at most about once per 120 ms; no teleporting or skipping blocked squares.
+- Test walls, fog, occupied spaces, board edges, turn restrictions, and player ownership. All must respect the same movement limits as clicking.
+- Space gives a purely **visual jump**, synchronized to connected players. It does not move the mini across terrain or evade traps.
+- Ensure keys do not activate when typing in input/textarea/select, while editing content, or when the game is not open.
+- Test GM and player views separately. Check that A and D no longer trigger attack/dash shortcuts (those formerly conflicted with WASD).
+- Test 3D and sprite minis, and check the jump ends at the normal ground elevation without cumulative vertical drift.
+- Multiplayer browser regression testing is still required before merging.
