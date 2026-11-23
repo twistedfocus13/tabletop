@@ -10,6 +10,20 @@
   let query = "";
   let checkpointEntries = [];
   let renderCheckpointList = () => {};
+  let lastProgress = null;
+  const showProgress = () => {
+    const root = document.getElementById("votfProgress");
+    if (!root || !lastProgress) return;
+    const { task, percent, message, status } = lastProgress;
+    root.hidden = false;
+    root.dataset.status = status;
+    root.querySelector(".votf-progress-label").textContent = message;
+    const bar = root.querySelector("progress");
+    bar.max = 100;
+    bar.value = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+    root.querySelector(".votf-progress-percent").textContent = bar.value + "%";
+    root.setAttribute("aria-label", task + ": " + message);
+  };
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -28,6 +42,21 @@
     const heading = el("div", "votf-heading");
     heading.append(el("strong", "", "🌳 Voice of the Forest"), el("span", "", "GM scene library · preparation only"));
     root.append(heading);
+    const progress = el("div", "votf-progress");
+    progress.id = "votfProgress";
+    progress.hidden = !lastProgress;
+    progress.setAttribute("role", "status");
+    progress.setAttribute("aria-live", "polite");
+    const progressLabel = el("div", "votf-progress-label", "Ready");
+    const progressRow = el("div", "votf-progress-row");
+    const progressBar = el("progress");
+    progressBar.max = 100;
+    progressBar.value = 0;
+    progressBar.setAttribute("aria-label", "Operation progress");
+    progressRow.append(progressBar, el("span", "votf-progress-percent", "0%"));
+    progress.append(progressLabel, progressRow);
+    root.append(progress);
+    showProgress();
     const checkpointBox = el("div", "votf-checkpoints");
     checkpointBox.append(el("strong", "", "Campaign checkpoints"));
     const controls = el("div", "votf-checkpoint-actions");
@@ -156,6 +185,17 @@
     }
     drawScenes();
   }
+  document.addEventListener("votf:progress", e => {
+    const detail = e.detail || {};
+    if (typeof detail.message !== "string") return;
+    lastProgress = {
+      task: String(detail.task || "operation"),
+      percent: Number(detail.percent) || 0,
+      message: detail.message,
+      status: ["running", "success", "error"].includes(detail.status) ? detail.status : "running"
+    };
+    showProgress();
+  });
   document.addEventListener("votf:checkpoints", e => {
     checkpointEntries = Array.isArray(e.detail?.entries) ? e.detail.entries : [];
     renderCheckpointList();
