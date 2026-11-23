@@ -2983,8 +2983,18 @@ document.addEventListener('votf:checkpoint-restore', async e => {
   if (!isHost || !document.body.classList.contains('gm')) return;
   const id = String(e.detail?.id || '');
   if (!votfCheckpointIndex().some(x => x.id === id)) return;
-  const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
-  await votfRestoreBackup(data);
+  try {
+    const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
+    if (!data) {
+      votfSceneStatus('Checkpoint data is missing. No changes were made. Try another checkpoint or import a backup.');
+      votfProgress('restore', 0, 1, 'Checkpoint data missing', 'error');
+      return;
+    }
+    await votfRestoreBackup(data);
+  } catch (err) {
+    votfSceneStatus('Could not read checkpoint: ' + err.message + '. No changes were made.');
+    votfProgress('restore', 0, 1, 'Checkpoint read failed: ' + err.message, 'error');
+  }
 });
 document.addEventListener('votf:checkpoint-import', async e => {
   if (!isHost || !document.body.classList.contains('gm')) return;
