@@ -752,6 +752,19 @@
     body:not(.gm) #turnBox, body.previewing #turnBox { right:562px; }
   }
 
+
+  /* Strongly differentiated dice results, readable in chat and combat history. */
+  #r20Dock .r20-roll-result, #combatLog .r20-roll-result {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:30px; min-height:30px; padding:2px 8px; margin-left:5px;
+    border:1px solid #a65cca; border-radius:8px;
+    background:#30163d; color:#f5ddff; font-size:17px;
+    font-weight:800; font-variant-numeric:tabular-nums; vertical-align:middle;
+  }
+  #r20Dock .r20-tips-body ul {padding-left:20px; margin:8px 0;}
+  #r20Dock .r20-tips-body li { margin:8px 0; }
+  #r20Dock .r20-tips-body code { display:block; padding:2px 0; color:#e7aaff; white-space:normal; overflow-wrap:anywhere; }
+
 </style>
 </head>
 <body>
