@@ -1,0 +1,25 @@
+name: Voice of the Forest regression tests
+on:
+  push:
+    branches:
+      - test/scene-persistence-multiplayer
+  pull_request:
+    paths:
+      - 'tabletop.js'
+      - 'campaigns/voice-of-the-forest/**'
+      - 'tests/votf-persistence.test.cjs'
+      - '.github/workflows/votf-regression.yml'
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out tabletop source
+        uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run persistence and visibility tests
+        run: node --test tests/votf-persistence.test.cjs
