@@ -117,9 +117,20 @@
     logSec.querySelector("h3")?.addEventListener("pointerdown",e=>e.stopImmediatePropagation(),true);
     const chatTips=make("details","r20-chat-tips");
     const summary=make("summary","","Chat tips");chatTips.append(summary);
+    chatTips.open=true;
     const text=make("div","r20-tips-body");
-    const p=make("p","","Use chat to coordinate with your team. Dice rolls appear in the same history.");text.append(p);
-    const commands=make("p","","The tabletop's existing dice controls are in the Dice tab. Keyboard movement still works when chat isn't focused.");
+    text.append(make("p","","Enter any message to chat with the party. You can also use:"));
+    const commands=make("ul","");
+    for(const [command,description] of [
+      ["/roll 1d20 or /r 2d6","Roll dice into the shared chat"],
+      ["/gmroll 1d20 or /gr 1d20","Roll privately to the GM"],
+      ["/w gm message","Whisper privately to the GM"],
+      ["/w \"Player Name\" message","Whisper to a player by name"]
+    ]) {
+      const li=make("li","");
+      const code=make("code","",command);
+      li.append(code,make("span","",description));commands.append(li);
+    }
     text.append(commands);chatTips.append(text);
     // Insert after the scrollable log but before chat composition.
     const input=logSec.querySelector("#chatIn")?.closest(".row");
