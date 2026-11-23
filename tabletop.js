@@ -1047,7 +1047,7 @@ function handle(msg, from) {
       if (!gm || state.boards.length < 2) return;
       const b = state.boards.find(x => x.id === msg.id);
       if (!b) return;
-      if (state.boardLib?.[b.lib]?.sceneId) {
+      if (state.boardLib?.[b.lib]?.campaignId === 'voice-of-the-forest' && state.boardLib?.[b.lib]?.sceneId) {
         if (layerOf(b) === (state.live || 1) || Object.values(state.figures).some(f => f.owner && boardAt(f.x,f.z) === b)) {
           votfSceneStatus('Cannot delete an active campaign scene or one containing a player Pokémon. Move players first.');
           return;
@@ -2751,7 +2751,9 @@ document.addEventListener('votf:checkpoint-restore', async e => {
   if (!votfCheckpointIndex().some(x => x.id === id)) return;
   const data = await blobs.get(VOTF_CHECKPOINT_PREFIX + id);
   if (!data || data.format !== 'votf-tabletop-checkpoint' || data.version !== 1 ||
-      !data.state || !Array.isArray(data.state.boards) || !Array.isArray(data.assets)) {
+      !data.state || !Array.isArray(data.state.boards) || !Array.isArray(data.assets) ||
+      !data.assets.every(entry => Array.isArray(entry) && entry.length === 2 &&
+        typeof entry[0] === 'string' && /^(map|boardlib|model):/.test(entry[0]))) {
     votfSceneStatus('This checkpoint could not be validated. Nothing changed.'); return;
   }
   if (!confirm('Restore "' + data.name + '"? The current session will be replaced after saving a safety checkpoint.')) return;
@@ -2765,11 +2767,7 @@ document.addEventListener('votf:checkpoint-restore', async e => {
     for (const [k] of existing) {
       if (!String(k).startsWith(VOTF_CHECKPOINT_PREFIX) && !desired.has(k)) await blobs.set(k,null);
     }
-    for (const [key,value] of data.assets) {
-      if (typeof key !== 'string' || !/^(map|boardlib|model):/.test(key))
-        throw Error('Unexpected asset key in checkpoint');
-      await blobs.set(key,value);
-    }
+    for (const [key,value] of data.assets) await blobs.set(key,value);
     if (!store.set('tabletop.host', { code:data.room || roomCode, state:data.state }))
       throw Error('Restored game state could not be written. See safety checkpoint ' + safety.id);
     location.reload();
