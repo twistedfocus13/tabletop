@@ -2670,14 +2670,8 @@ function votfCloseScene(board, notify = true) {
     return false;
   }
   votfCaptureScene(board);
-  // No player-owned figures are deleted, and no other scenes are modified.
-  for (const [id,f] of Object.entries(state.figures)) {
-    if (!f.owner && boardAt(f.x,f.z) === board) {
-      delete state.figures[id];
-      sendAll({ t:'del', id });
-    }
-  }
-  // The ordinary boardDel action handles the map and tile cleanup.
+  // The boardDel action snapshots this board and then removes its GM NPCs.
+  // Do not remove figures here, or its second snapshot would be empty.
   handle({ t:'boardDel', id:board.id }, clientId);
   if (notify) votfSceneStatus('Scene saved and unloaded. Reopen it to restore terrain and NPCs.');
   return true;
