@@ -6274,6 +6274,10 @@ function enterGame() {
   $('whoAmI').textContent = isHost ? `You are the GM (${myName}). You can move everything.` : `You are ${myName}. You can move your own mini (white ring).`;
   if (!renderer) { initView(); wirePanel(); }
   rebuildAll();
+  if (isHost) {
+    const active = document.querySelector('#gmLayerToolbar [data-layer-mode].active');
+    if (active) document.dispatchEvent(new CustomEvent('gmtools:mode', {detail:{mode:active.dataset.layerMode}}));
+  }
   if (!isHost && !selectedId) { const own = myMini(); if (own) select(own.id); }   // players start with their own mini picked
 }
 
