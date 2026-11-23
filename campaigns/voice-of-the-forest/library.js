@@ -168,14 +168,18 @@
         const restore = el("button", "", "↩️ Go back to this");
         restore.type = "button";
         restore.title = "Puts the campaign back the way it was (a safety copy is saved first)";
-        restore.addEventListener("click", () => document.dispatchEvent(
-          new CustomEvent("votf:checkpoint-restore", { detail: { id:cp.id } })));
+        restore.addEventListener("click", () => {
+          if (!window.confirm('Restore checkpoint "' + cp.name + '"? This will replace the current campaign state.')) return;
+          document.dispatchEvent(new CustomEvent("votf:checkpoint-restore", { detail: { id:cp.id } }));
+        });
         const del = el("button", "", "🗑️");
         del.title = "Delete this checkpoint";
         del.setAttribute("aria-label", "Delete checkpoint " + cp.name);
         del.type = "button";
-        del.addEventListener("click", () => document.dispatchEvent(
-          new CustomEvent("votf:checkpoint-delete", { detail: { id:cp.id } })));
+        del.addEventListener("click", () => {
+          if (!window.confirm('Permanently delete checkpoint "' + cp.name + '"?')) return;
+          document.dispatchEvent(new CustomEvent("votf:checkpoint-delete", { detail: { id:cp.id } }));
+        });
         line.append(restore, del);
         savedList.append(line);
       }
