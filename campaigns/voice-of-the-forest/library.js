@@ -15,24 +15,9 @@
     return n;
   };
   const normalize = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const savedPlaceCards = () => [...document.querySelectorAll("#placesCards .placeCard")];
-  function matchSavedPlace(scene) {
-    const targets = [scene.name, scene.originalFilename?.replace(/\.png$/i, "").replace(/_/g, " ")].filter(Boolean).map(normalize);
-    return savedPlaceCards().find(card => targets.includes(normalize(card.querySelector(".pcName")?.textContent)));
-  }
   function openExisting(scene, notice) {
-    // Prefer persistent scene identity; the game module handles existing/open layers.
-    document.dispatchEvent(new CustomEvent("votf:open-scene", { detail: { sceneId: scene.id } }));
-    const found = matchSavedPlace(scene);
-    if (found) { found.click(); return; }
-    // Legacy saved boards may use scene names but have no scene ID.
-    const folders = [...document.querySelectorAll("#placesFolders button:not(.pfSave)")];
-    for (const button of folders) {
-      button.click();
-      const card = matchSavedPlace(scene);
-      if (card) { card.click(); return; }
-    }
-    notice.textContent = "Not yet imported. Use Import original PNG once to create this scene safely.";
+    notice.textContent = "Looking for an existing saved scene…";
+    document.dispatchEvent(new CustomEvent("votf:open-scene", { detail: { sceneId: scene.id, name: scene.name } }));
   }
   function render() {
     const root = document.getElementById("votfLibrary");
