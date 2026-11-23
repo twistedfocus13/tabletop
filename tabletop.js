@@ -405,7 +405,18 @@ function onClientData(msg) {
     case 'figs': state.figures = msg.figures; syncFigures(); renderHud(); break;
     case 'jumpFx': if (typeof msg.id === 'string') startMiniJump(msg.id); break;
     case 'del': delete state.figures[msg.id]; removeFigMesh(msg.id); renderHud(); break;
-    case 'boards': state.boards = msg.boards; buildBoard(); updateBoardInputs(); break;
+    case 'boards': {
+      // A scene switch can remove boards without a matching map-removal event
+      // (for example, if the GM already deleted its map). Never retain an old
+      // scene's image in the player's local state after its board disappears.
+      state.boards = msg.boards;
+      const visibleBoardIds = new Set(state.boards.map(b => b.id));
+      for (const id of Object.keys(state.maps)) {
+        if (!visibleBoardIds.has(id)) delete state.maps[id];
+      }
+      buildBoard(); updateBoardInputs();
+      break;
+    }
     case 'gmEditVisuals':
       state.gmFog = msg.fog || {}; state.gmLights = msg.lights || [];
       tilesChanged(); syncFigures(); refreshGmFog(); refreshGmLights();
