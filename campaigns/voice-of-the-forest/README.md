@@ -1,6 +1,6 @@
 # Voice of the Forest — tabletop scene library foundation
 
-This is a **data-only, non-live** foundation. No changes to the existing board, multiplayer, save code, or player UI have been made.
+This is a **development-branch-only** foundation. An additive GM-only browser now appears inside the Places panel, with a one-time local original-PNG import flow. Existing boards, multiplayer and game saves are reused without changing their underlying model.
 
 ## Source of truth
 - Published campaign repo: `twistedfocus13/thevoiceoftheforest`.
@@ -23,8 +23,8 @@ This is a **data-only, non-live** foundation. No changes to the existing board, 
 - Existing tabletop supports up to 20 loaded layers; saved scene state must be unloadable without deletion.
 
 ## Implementation milestones
-1. Validate the manifest and commit original map assets on this branch.
-2. Implement scene template loading as an additive, GM-only section of the existing Places UI.
+1. Validate the manifest and import original map assets locally; static image files are not yet committed to GitHub.
+2. **Implemented for local imported PNGs:** browse chapter cards and import an original image into an isolated GM layer, then open its saved place.
 3. Add chapter unlock/discovery state and player-safe visibility filtering.
 4. Implement persistent per-scene state, safe unloading, autosave, checkpoints, and restore testing.
 5. Publish a versioned player-safe story JSON file from the campaign website and implement resilient sync.
