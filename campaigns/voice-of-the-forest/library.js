@@ -43,7 +43,22 @@
     const exportButton = el("button", "", "Export backup");
     exportButton.type = "button";
     exportButton.addEventListener("click", () => document.dispatchEvent(new Event("votf:checkpoint-export")));
-    controls.append(checkpointName, create, exportButton);
+    const importButton = el("button", "", "Import backup");
+    importButton.type = "button";
+    importButton.addEventListener("click", () => {
+      const picker = el("input");
+      picker.type = "file";
+      picker.accept = ".json,application/json";
+      picker.style.display = "none";
+      picker.addEventListener("change", () => {
+        const file = picker.files?.[0];
+        picker.remove();
+        if (file) document.dispatchEvent(new CustomEvent("votf:checkpoint-import", { detail: { file } }));
+      }, { once:true });
+      document.body.append(picker);
+      picker.click();
+    });
+    controls.append(checkpointName, create, exportButton, importButton);
     const savedList = el("div", "votf-checkpoint-list");
     renderCheckpointList = () => {
       savedList.replaceChildren();
